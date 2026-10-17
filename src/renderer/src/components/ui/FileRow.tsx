@@ -12,9 +12,10 @@ interface Props {
   selected: boolean
   onToggle: () => void
   onOpenInFinder?: () => void
+  accent?: string
 }
 
-export default function FileRow({ file, selected, onToggle, onOpenInFinder }: Props) {
+export default function FileRow({ file, selected, onToggle, onOpenInFinder, accent = '#CF6EE4' }: Props) {
   const parts = file.path.split('/')
   const dirPath = parts.slice(0, -1).join('/').replace(/^\/Users\/[^/]+/, '~')
 
@@ -24,14 +25,20 @@ export default function FileRow({ file, selected, onToggle, onOpenInFinder }: Pr
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        padding: '9px 16px',
-        borderRadius: 10,
-        background: selected ? 'rgba(168,85,247,0.12)' : 'transparent',
-        border: selected ? '1px solid rgba(168,85,247,0.2)' : '1px solid transparent',
-        transition: 'all 0.1s ease',
+        padding: '8px 14px',
+        borderRadius: 9,
+        background: selected ? `${accent}18` : 'transparent',
+        border: selected ? `1px solid ${accent}30` : '1px solid transparent',
+        transition: 'background 0.1s, border-color 0.1s',
         cursor: 'pointer'
       }}
       onClick={onToggle}
+      onMouseEnter={e => {
+        if (!selected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
+      }}
+      onMouseLeave={e => {
+        if (!selected) (e.currentTarget as HTMLElement).style.background = 'transparent'
+      }}
     >
       <input
         type="checkbox"
@@ -41,7 +48,7 @@ export default function FileRow({ file, selected, onToggle, onOpenInFinder }: Pr
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: 500,
           color: 'var(--text)',
           overflow: 'hidden',
@@ -51,21 +58,22 @@ export default function FileRow({ file, selected, onToggle, onOpenInFinder }: Pr
           {file.name}
         </div>
         <div style={{
-          fontSize: 11,
-          color: 'var(--text-muted)',
+          fontSize: 10,
+          color: 'rgba(255,255,255,0.38)',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          marginTop: 2
+          marginTop: 1
         }}>
           {dirPath}
         </div>
       </div>
       <div style={{
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 600,
-        color: 'var(--text-muted)',
-        flexShrink: 0
+        color: 'rgba(255,255,255,0.45)',
+        flexShrink: 0,
+        fontVariantNumeric: 'tabular-nums'
       }}>
         {formatBytes(file.size)}
       </div>
@@ -77,12 +85,15 @@ export default function FileRow({ file, selected, onToggle, onOpenInFinder }: Pr
             background: 'none',
             border: 'none',
             cursor: 'pointer',
-            fontSize: 13,
-            opacity: 0.5,
+            fontSize: 12,
+            opacity: 0.4,
             padding: '2px 4px',
             borderRadius: 4,
-            color: 'var(--text)'
+            color: 'var(--text)',
+            transition: 'opacity 0.1s'
           }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
         >
           ↗
         </button>

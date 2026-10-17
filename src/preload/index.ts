@@ -23,11 +23,20 @@ const electronAPI = {
   openPath: (filePath: string): Promise<void> =>
     ipcRenderer.invoke('shell:openPath', filePath),
 
+  quickLook: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('shell:quickLook', filePath),
+
   onScanProgress: (callback: (progress: ScanProgress) => void): (() => void) => {
     const handler = (_: Electron.IpcRendererEvent, progress: ScanProgress): void =>
       callback(progress)
     ipcRenderer.on('scan:progress', handler)
     return () => ipcRenderer.removeListener('scan:progress', handler)
+  },
+
+  onScanFile: (callback: (path: string) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, p: string): void => callback(p)
+    ipcRenderer.on('scan:file', handler)
+    return () => ipcRenderer.removeListener('scan:file', handler)
   },
 
   // Space Lens: directory tree walker
@@ -59,7 +68,22 @@ const electronAPI = {
   maximize: (): Promise<void> => ipcRenderer.invoke('window:maximize'),
   close: (): Promise<void> => ipcRenderer.invoke('window:close'),
 
-  homeDir: os.homedir()
+  homeDir: os.homedir(),
+
+  // Gmail OAuth & API
+  gmail: {
+    hasCredentials: (): Promise<boolean> => ipcRenderer.invoke('gmail:hasCredentials'),
+    credentialsPath: (): Promise<string> => ipcRenderer.invoke('gmail:credentialsPath'),
+    startAuth: (): Promise<string> => ipcRenderer.invoke('gmail:startAuth'),
+    getAccounts: (): Promise<Array<{ email: string; provider: string; totalMessages?: number }>> =>
+      ipcRenderer.invoke('gmail:getAccounts'),
+    disconnect: (email: string): Promise<void> => ipcRenderer.invoke('gmail:disconnect', email),
+    scan: (email: string, rules: Array<{ id: string; type: string; enabled: boolean }>): Promise<
+      Array<{ ruleId: string; count: number; sizeBytes: number; messageIds: string[] }>
+    > => ipcRenderer.invoke('gmail:scan', email, rules),
+    delete: (email: string, messageIds: string[]): Promise<{ deleted: number; failed: number; cancelled?: boolean }> =>
+      ipcRenderer.invoke('gmail:delete', email, messageIds),
+  }
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)

@@ -15,11 +15,14 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "package": "npm run build && npx electron-builder --mac --dir",
+    "install-app": "npm run package && cp -r dist/mac-arm64/MacSweeper.app /Applications/"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.3.4",
+    "googleapis": "^186.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -98,7 +101,6 @@
         }
       ]
     },
-    "afterSign": "scripts/notarize.js",
     "publish": {
       "provider": "github",
       "owner": "user",

@@ -1,5 +1,10 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
 import {
+  startGmailAuth, getConnectedAccounts, disconnectAccount,
+  scanEmailsByRules, deleteEmails, getCredentialsPath, hasCredentials
+} from './gmail'
+import type { ScanRule } from './gmail'
+import {
   scanLanguageFiles,
   scanUserCache,
   scanLogs,
@@ -182,6 +187,11 @@ export function registerIpcHandlers(): void {
     shell.openPath(filePath)
   })
 
+  ipcMain.handle('shell:quickLook', async (_, filePath: string) => {
+    const { spawn } = require('child_process') as typeof import('child_process')
+    spawn('qlmanage', ['-p', filePath], { detached: true, stdio: 'ignore' }).unref()
+  })
+
   ipcMain.handle('window:minimize', () => {
     getFocusedWindow()?.minimize()
   })
@@ -194,5 +204,39 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('window:close', () => {
     getFocusedWindow()?.close()
+  })
+
+  // ── Gmail OAuth & API ────────────────────────────────────────────────────────
+
+  ipcMain.handle('gmail:hasCredentials', () => hasCredentials())
+  ipcMain.handle('gmail:credentialsPath', () => getCredentialsPath())
+
+  ipcMain.handle('gmail:startAuth', async () => {
+    if (!hasCredentials()) throw new Error('NO_CREDENTIALS')
+    return startGmailAuth()
+  })
+
+  ipcMain.handle('gmail:getAccounts', async () => getConnectedAccounts())
+
+  ipcMain.handle('gmail:disconnect', async (_, email: string) => {
+    disconnectAccount(email)
+  })
+
+  ipcMain.handle('gmail:scan', async (_, email: string, rules: ScanRule[]) => {
+    return scanEmailsByRules(email, rules)
+  })
+
+  ipcMain.handle('gmail:delete', async (event, email: string, messageIds: string[]) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { response } = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      title: 'Delete Emails',
+      message: `Permanently delete ${messageIds.length} emails?`,
+      detail: 'This will move emails to Trash in Gmail. You can recover them from Gmail Trash within 30 days.',
+      buttons: ['Delete', 'Cancel'],
+      defaultId: 0, cancelId: 1
+    })
+    if (response === 1) return { deleted: 0, failed: 0, cancelled: true }
+    return deleteEmails(email, messageIds)
   })
 }

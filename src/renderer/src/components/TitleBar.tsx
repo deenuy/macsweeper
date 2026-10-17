@@ -1,3 +1,5 @@
+import { IconBell } from './icons'
+
 export default function TitleBar() {
   return (
     <div
@@ -5,30 +7,32 @@ export default function TitleBar() {
         height: 52,
         display: 'flex',
         alignItems: 'center',
-        paddingLeft: 80,
+        paddingLeft: 76,
         paddingRight: 20,
-        WebkitAppRegion: 'drag' as React.CSSProperties['WebkitAppRegion'],
-        flexShrink: 0,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        background: 'rgba(10,10,24,0.7)',
-        backdropFilter: 'blur(20px)'
+        WebkitAppRegion: 'drag',
+        flexShrink: 0
       } as React.CSSProperties}
     >
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        userSelect: 'none'
-      }}>
-        <span style={{ fontSize: 18 }}>🧹</span>
-        <span style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: 'rgba(240,240,255,0.9)',
-          letterSpacing: '0.01em'
-        }}>
-          MacSweeper
-        </span>
+      {/* Notification button — no-drag so it's clickable */}
+      <div style={{ marginLeft: 'auto', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <button style={{
+          width: 34,
+          height: 34,
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.10)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          color: 'rgba(255,255,255,0.75)',
+          transition: 'background 0.15s'
+        }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.16)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.10)')}
+        >
+          <IconBell />
+        </button>
       </div>
     </div>
   )

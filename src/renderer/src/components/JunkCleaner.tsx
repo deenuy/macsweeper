@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import FileRow from './ui/FileRow'
+import CategoryIcon from './ui/CategoryIcon'
 import type { FileItem, ScanCategory, ScanProgress } from '../../../shared/types'
 import { CATEGORIES } from '../../../shared/types'
+import type { PageTheme } from '../App'
 
 function formatBytes(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB'
@@ -19,7 +21,9 @@ interface CategoryState {
   status: 'pending' | 'scanning' | 'done'
 }
 
-export default function JunkCleaner() {
+interface Props { theme: PageTheme }
+
+export default function JunkCleaner({ theme }: Props) {
   const [scanState, setScanState] = useState<ScanState>('idle')
   const [categories, setCategories] = useState<Record<ScanCategory, CategoryState>>(
     Object.fromEntries(
@@ -50,13 +54,11 @@ export default function JunkCleaner() {
     setScanState('scanning')
     setSelected(new Set())
     setCleanDone(null)
-
     setCategories(
       Object.fromEntries(
         CATEGORIES.map(c => [c.id, { items: [], size: 0, found: 0, status: 'scanning' }])
       ) as Record<ScanCategory, CategoryState>
     )
-
     try {
       const result = await window.electron.scanAll()
       const newCats = { ...categories }
@@ -70,8 +72,6 @@ export default function JunkCleaner() {
         }
       }
       setCategories(newCats)
-
-      // Auto-select all
       const allPaths = new Set(Object.values(result).flat().map((f: unknown) => (f as FileItem).path))
       setSelected(allPaths)
       setScanState('done')
@@ -85,22 +85,16 @@ export default function JunkCleaner() {
     const allItems = Object.values(categories).flatMap(c => c.items)
     const toClean = allItems.filter(f => selected.has(f.path))
     if (toClean.length === 0) return
-
     setScanState('cleaning')
     const result = await window.electron.cleanItems(toClean)
     if (!result.cancelled) {
       setCleanDone({ cleaned: result.cleaned, size: result.totalSize })
-      // Remove cleaned items
       setCategories(prev => {
         const next = { ...prev }
         const cleanedPaths = new Set(toClean.map(f => f.path))
         for (const cat of Object.keys(next) as ScanCategory[]) {
-          next[cat] = {
-            ...next[cat],
-            items: next[cat].items.filter(f => !cleanedPaths.has(f.path)),
-            size: next[cat].items.filter(f => !cleanedPaths.has(f.path)).reduce((a, f) => a + f.size, 0),
-            found: next[cat].items.filter(f => !cleanedPaths.has(f.path)).length
-          }
+          const remaining = next[cat].items.filter(f => !cleanedPaths.has(f.path))
+          next[cat] = { ...next[cat], items: remaining, size: remaining.reduce((a,f)=>a+f.size,0), found: remaining.length }
         }
         return next
       })
@@ -120,10 +114,7 @@ export default function JunkCleaner() {
 
   const activeItems = categories[activeCategory]?.items ?? []
   const activeSelected = activeItems.filter(f => selected.has(f.path))
-
-  const totalSelected = Object.values(categories)
-    .flatMap(c => c.items)
-    .filter(f => selected.has(f.path))
+  const totalSelected = Object.values(categories).flatMap(c => c.items).filter(f => selected.has(f.path))
   const totalSelectedSize = totalSelected.reduce((a, f) => a + f.size, 0)
 
   const toggleCategory = () => {
@@ -141,19 +132,14 @@ export default function JunkCleaner() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 24
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em' }}>Cleanup</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
-            {scanState === 'idle' && 'Scan for junk files to free up space'}
-            {scanState === 'scanning' && 'Scanning your Mac...'}
-            {scanState === 'done' && `${totalSelected.length} items selected · ${formatBytes(totalSelectedSize)} to free`}
-            {scanState === 'cleaning' && 'Moving files to Trash...'}
+          <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.025em' }}>Cleanup</h1>
+          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 3 }}>
+            {scanState === 'idle'     && 'Scan to find junk files and free up space'}
+            {scanState === 'scanning' && 'Scanning your Mac…'}
+            {scanState === 'done'     && `${totalSelected.length} items selected · ${formatBytes(totalSelectedSize)}`}
+            {scanState === 'cleaning' && 'Moving files to Trash…'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -166,55 +152,45 @@ export default function JunkCleaner() {
             className="btn-primary"
             onClick={runScan}
             disabled={scanState === 'scanning' || scanState === 'cleaning'}
+            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}AA)` }}
           >
             {scanState === 'scanning' ? (
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="animate-spin" style={{ display: 'inline-block' }}>⟳</span>
-                Scanning...
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="animate-spin" style={{ display: 'inline-block' }}><circle cx="9" cy="9" r="6" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/><path d="M9 3a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+                Scanning…
               </span>
             ) : scanState === 'idle' ? 'Scan' : 'Rescan'}
           </button>
         </div>
       </div>
 
-      {/* Success banner */}
       {cleanDone && (
         <div style={{
-          marginBottom: 20,
-          padding: '14px 18px',
-          background: 'rgba(34,197,94,0.12)',
-          border: '1px solid rgba(34,197,94,0.3)',
-          borderRadius: 14,
+          marginBottom: 16,
+          padding: '12px 16px',
+          background: 'rgba(48, 209, 88, 0.12)',
+          border: '1px solid rgba(48, 209, 88, 0.28)',
+          borderRadius: 12,
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
-          animation: 'slide-up 0.3s ease-out'
+          gap: 10,
+          fontSize: 13
         }}>
-          <span style={{ fontSize: 20 }}>✅</span>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Cleanup complete!</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-              {cleanDone.cleaned} items ({formatBytes(cleanDone.size)}) moved to Trash
-            </div>
-          </div>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ display: 'inline-block' }}><path d="M3 8l4 4 6-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <span><strong>{cleanDone.cleaned} items</strong> ({formatBytes(cleanDone.size)}) moved to Trash</span>
         </div>
       )}
 
-      {/* Two-panel layout */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        gap: 16,
-        overflow: 'hidden',
-        minHeight: 0
-      }}>
-        {/* Category sidebar */}
+      {/* Two-panel */}
+      <div style={{ flex: 1, display: 'flex', gap: 14, overflow: 'hidden', minHeight: 0 }}>
+
+        {/* Category list */}
         <div style={{
-          width: 220,
+          width: 212,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: 4,
+          gap: 2,
           overflowY: 'auto'
         }}>
           {CATEGORIES.map(cat => {
@@ -227,126 +203,127 @@ export default function JunkCleaner() {
                 onClick={() => setActiveCategory(cat.id)}
                 style={{
                   display: 'flex',
-                  flexDirection: 'column',
-                  padding: '12px 14px',
-                  borderRadius: 12,
-                  border: isActive ? `1px solid ${cat.color}44` : '1px solid transparent',
-                  background: isActive ? `${cat.color}18` : 'rgba(255,255,255,0.04)',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '9px 12px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: isActive ? `rgba(0,0,0,0.30)` : 'rgba(0,0,0,0.12)',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  transition: 'all 0.15s',
-                  position: 'relative'
+                  outline: isActive ? `1px solid rgba(255,255,255,0.14)` : '1px solid transparent',
+                  transition: 'all 0.12s'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
-                  <span style={{ fontSize: 15 }}>{cat.icon}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <CategoryIcon categoryId={cat.id} size={14} color={isActive ? theme.accent : 'rgba(255,255,255,0.45)'} />
                   <span style={{
                     fontSize: 12,
-                    fontWeight: 600,
-                    color: isActive ? 'var(--text)' : 'var(--text-muted)'
-                  }}>{cat.label}</span>
+                    fontWeight: isActive ? 600 : 400,
+                    color: isActive ? 'var(--text)' : 'rgba(255,255,255,0.60)'
+                  }}>
+                    {cat.label}
+                  </span>
                 </div>
-                <div style={{
-                  fontSize: 11,
-                  color: hasSomething ? cat.color : 'var(--text-muted)',
-                  fontWeight: hasSomething ? 600 : 400
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: hasSomething ? theme.accent : 'rgba(255,255,255,0.30)',
+                  fontVariantNumeric: 'tabular-nums',
+                  minWidth: 32,
+                  textAlign: 'right'
                 }}>
-                  {state.status === 'scanning' ? (
-                    <span className="animate-spin" style={{ display: 'inline-block' }}>⟳</span>
-                  ) : state.status === 'done' ? (
-                    hasSomething ? `${formatBytes(state.size)}` : '✓ Clean'
-                  ) : '—'}
-                </div>
+                  {state.status === 'scanning'
+                    ? <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-spin" style={{ display: 'inline-block' }}><circle cx="6" cy="6" r="4" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5"/><path d="M6 2a4 4 0 0 1 4 4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                    : state.status === 'done'
+                      ? hasSomething ? formatBytes(state.size) : '—'
+                      : ''}
+                </span>
               </button>
             )
           })}
         </div>
 
-        {/* File list */}
+        {/* File list panel */}
         <div style={{
           flex: 1,
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(0,0,0,0.22)',
+          border: '1px solid rgba(255,255,255,0.10)',
           borderRadius: 16,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden'
         }}>
-          {/* Category header */}
+          {/* Panel header */}
           <div style={{
-            padding: '14px 18px',
+            padding: '12px 18px',
             borderBottom: '1px solid rgba(255,255,255,0.08)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexShrink: 0
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 18 }}>
-                {CATEGORIES.find(c => c.id === activeCategory)?.icon}
-              </span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>
-                  {CATEGORIES.find(c => c.id === activeCategory)?.label}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {CATEGORIES.find(c => c.id === activeCategory)?.description}
-                </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {CATEGORIES.find(c => c.id === activeCategory)?.label}
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>
+                {CATEGORIES.find(c => c.id === activeCategory)?.description}
               </div>
             </div>
             {activeItems.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {activeSelected.length}/{activeItems.length} selected
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
+                  {activeSelected.length}/{activeItems.length}
                 </span>
                 <button className="btn-secondary" style={{ fontSize: 11, padding: '5px 12px' }} onClick={toggleCategory}>
-                  {activeItems.every(f => selected.has(f.path)) ? 'Deselect All' : 'Select All'}
+                  {activeItems.every(f => selected.has(f.path)) ? 'Deselect all' : 'Select all'}
                 </button>
               </div>
             )}
           </div>
 
           {/* Files */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
             {scanState === 'idle' && (
               <div style={{
+                height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '100%',
-                color: 'var(--text-muted)',
-                gap: 12
+                color: 'rgba(255,255,255,0.28)',
+                gap: 10
               }}>
-                <span style={{ fontSize: 40 }}>🔍</span>
-                <span style={{ fontSize: 14 }}>Run a scan to see files</span>
+                <span style={{ fontSize: 36 }}>🔍</span>
+                <span style={{ fontSize: 13 }}>Run a scan to see files</span>
               </div>
             )}
             {scanState === 'scanning' && categories[activeCategory].status === 'scanning' && (
               <div style={{
+                height: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '100%',
-                gap: 12,
-                color: 'var(--text-muted)'
+                gap: 10,
+                color: 'rgba(255,255,255,0.45)'
               }}>
-                <span className="animate-spin" style={{ fontSize: 20, display: 'inline-block' }}>⟳</span>
-                <span>Scanning...</span>
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="animate-spin" style={{ display: 'inline-block' }}><circle cx="9" cy="9" r="6" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/><path d="M9 3a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+                <span style={{ fontSize: 13 }}>Scanning…</span>
               </div>
             )}
             {activeItems.length === 0 && categories[activeCategory].status === 'done' && (
               <div style={{
+                height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '100%',
-                color: 'var(--text-muted)',
-                gap: 12
+                color: 'rgba(255,255,255,0.35)',
+                gap: 10
               }}>
-                <span style={{ fontSize: 40 }}>✅</span>
-                <span style={{ fontSize: 14 }}>Nothing found — this category is clean!</span>
+                <svg width="30" height="30" viewBox="0 0 30 30" fill="none" style={{ display: 'inline-block' }}><path d="M5 15l8 8 12-13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <span style={{ fontSize: 13 }}>This category is clean</span>
               </div>
             )}
             {activeItems.map(file => (
@@ -356,6 +333,7 @@ export default function JunkCleaner() {
                 selected={selected.has(file.path)}
                 onToggle={() => toggleFile(file.path)}
                 onOpenInFinder={() => window.electron.openInFinder(file.path)}
+                accent={theme.accent}
               />
             ))}
           </div>

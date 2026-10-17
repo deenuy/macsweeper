@@ -79,6 +79,13 @@ export function requestCancel(): void {
   cancelRequested = true
 }
 
+let lastProgressSend = 0
+function emitScanFile(win: BrowserWindow | null, filePath: string) {
+  if (!win || Date.now() - lastProgressSend < 80) return
+  lastProgressSend = Date.now()
+  win.webContents.send('scan:file', filePath)
+}
+
 function emitProgress(
   win: BrowserWindow | null,
   category: ScanCategory,
@@ -175,6 +182,7 @@ export async function scanLogs(win: BrowserWindow | null): Promise<FileItem[]> {
         category: 'logs',
         modifiedAt: stat.mtime.toISOString()
       })
+      emitScanFile(win, filePath)
       emitProgress(win, 'logs', results.length, results.reduce((a, f) => a + f.size, 0), 'scanning')
     })
   }
@@ -465,6 +473,7 @@ export async function scanLargeFiles(win: BrowserWindow | null): Promise<FileIte
         category: 'large-files',
         modifiedAt: stat.mtime.toISOString()
       })
+      emitScanFile(win, filePath)
       if (results.length % 10 === 0) {
         emitProgress(win, 'large-files', results.length, results.reduce((a, f) => a + f.size, 0), 'scanning')
       }
@@ -654,14 +663,7 @@ export async function findDuplicates(
         // skip unreadable files
       }
       processed++
-      if (processed % 20 === 0) {
-        win?.webContents.send('scan:progress', {
-          category: 'duplicates',
-          found: processed,
-          size: 0,
-          status: 'scanning'
-        })
-      }
+      emitScanFile(win, filePath)
     }
   }
 

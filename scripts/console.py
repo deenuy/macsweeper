@@ -318,20 +318,13 @@ def cmd_audit(fix: bool = False, force: bool = False):
     print()
 
 def cmd_desktop():
-    """Launch Electron in dev mode against an already-running Vite dev server."""
+    """Build fresh and launch MacSweeper's own Electron dev server (electron-vite dev)."""
     banner("desktop")
-    main_js = OUT_DIR / "main" / "index.js"
-    if not main_js.exists():
-        section("Main process not built — building first")
-        run_step("electron-vite build", [*NPM, "run", "build"], critical=True)
-    section("Launching Electron in dev mode")
-    port = os.environ.get("VITE_PORT", "5173")
-    dev_url = f"http://localhost:{port}"
-    print(f"  {c(DIM, f'Renderer URL → {dev_url}')}")
-    print(f"  {c(DIM, f'Make sure the dev server is running first (make dev in another terminal)')}\n")
-    log_raw(f"[START] Electron desktop mode → {dev_url}")
-    env = {**os.environ, "ELECTRON_RENDERER_URL": dev_url}
-    os.execvpe("npx", ["npx", "electron", str(main_js)], env)
+    section("Building & launching MacSweeper")
+    print(f"  {c(DIM, 'Starts electron-vite dev on its own port — not affected by other Vite servers')}\n")
+    log_raw("[START] MacSweeper desktop via electron-vite dev")
+    # electron-vite dev bundles main, starts its own Vite renderer, and opens Electron
+    run_step("electron-vite dev", [*NPM, "run", "dev"], critical=True)
 
 def cmd_release():
     """Build, notarize and publish a GitHub release."""
