@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+logs/
+.pids/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+resources/icon.icns
+resources/dmg-background.png
