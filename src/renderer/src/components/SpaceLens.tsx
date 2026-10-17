@@ -569,17 +569,36 @@ export default function SpaceLens() {
     window.electron.fileMeta(selected.path).then(m => setMeta(m)).catch(() => setMeta(null))
   }, [selected])
 
-  const doScan = useCallback(async (path: string): Promise<TreeNode[]> => {
-    const nodes = await window.electron.scanDir(path)
-    return [...nodes].sort((a, b) => b.size - a.size)
+  const doQuery = useCallback(async (path: string): Promise<TreeNode[]> => {
+    return window.electron.spaceQuery(path)
   }, [])
+
+  // On mount: if the home index is already fresh, jump straight to results
+  useEffect(() => {
+    const home = window.electron.homeDir
+    window.electron.spaceIsFresh(home).then(fresh => {
+      if (!fresh) return
+      doQuery(home).then(nodes => {
+        setCurrentPath(home)
+        setNavStack([])
+        setChecked(new Set())
+        setSelected(null)
+        setCurrentNodes(nodes)
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [doQuery])
 
   const handleInitialScan = async () => {
     const home = window.electron.homeDir
     setScanning(true)
     setScanFile(home)
     try {
-      const nodes = await doScan(home)
+      // Check freshness first — skip the full walk if index is recent
+      const fresh = await window.electron.spaceIsFresh(home)
+      if (!fresh) {
+        await window.electron.spaceIndex(home)
+      }
+      const nodes = await doQuery(home)
       setCurrentPath(home); setNavStack([])
       setChecked(new Set()); setSelected(null)
       setCurrentNodes(nodes)
@@ -593,8 +612,11 @@ export default function SpaceLens() {
     if (!node.isDir || node.path === OTHER_PATH) return
     setNavDir('forward')
     setNavStack(prev => [...prev, { path: currentPath!, nodes: currentNodes, label: currentPath!.split('/').pop() || currentPath! }])
-    setScanning(true); setCurrentPath(node.path); setChecked(new Set()); setSelected(null); setTooltip(null)
-    try { setCurrentNodes(await doScan(node.path)); setAnimKey(k => k + 1) } finally { setScanning(false) }
+    setCurrentPath(node.path); setChecked(new Set()); setSelected(null); setTooltip(null)
+    // DB query is synchronous-fast — no spinner needed
+    const children = await doQuery(node.path)
+    setCurrentNodes(children)
+    setAnimKey(k => k + 1)
   }
 
   const handleBack = async () => {
@@ -644,6 +666,8 @@ export default function SpaceLens() {
     const removedPaths = new Set(items.map(i => i.path))
     try {
       await window.electron.cleanItems(items)
+      // Remove from SQLite index so stale entries don't show on next query
+      window.electron.spaceInvalidate([...removedPaths]).catch(() => {})
       // Remove deleted nodes from current level — no rescan needed
       setCurrentNodes(prev => prev.filter(n => !removedPaths.has(n.path)))
       // Propagate size reduction to ancestor nodes in navStack

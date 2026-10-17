@@ -22,9 +22,10 @@ import {
   findDuplicates,
   requestCancel
 } from './scanner'
-import { scanDirOneLevel, getFileMeta } from './fs-utils'
-import { openDb, recordCleanup, beginScanSession, completeScanSession, saveScanFindings,
-         getCleanupHistory, getTotalFreed, addIgnorePath, removeIgnorePath, getIgnoredPaths } from './db'
+import { scanDirOneLevel, getFileMeta, buildSpaceIndex } from './fs-utils'
+import { recordCleanup, beginScanSession, completeScanSession, saveScanFindings,
+         getCleanupHistory, getTotalFreed, addIgnorePath, removeIgnorePath, getIgnoredPaths,
+         isSpaceTreeFresh, insertSpaceTreeBatch, querySpaceChildren, clearSpaceTree, invalidateSpacePaths } from './db'
 import { moveToTrash } from './cleaner'
 import type { FileItem, DiskStats } from '../shared/types'
 
@@ -137,6 +138,27 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('fs:fileMeta', async (_, filePath: string) => {
     return getFileMeta(filePath)
+  })
+
+  // ── Space Lens: SQLite-backed full index ────────────────────────────────────
+  ipcMain.handle('space:isFresh', async (_, rootPath: string) => {
+    return isSpaceTreeFresh(rootPath)
+  })
+
+  ipcMain.handle('space:index', async (_, rootPath: string) => {
+    const win = getFocusedWindow()
+    clearSpaceTree(rootPath)
+    const nodes = buildSpaceIndex(rootPath, win)
+    insertSpaceTreeBatch(nodes as any)
+    return nodes.length
+  })
+
+  ipcMain.handle('space:query', async (_, parentPath: string) => {
+    return querySpaceChildren(parentPath)
+  })
+
+  ipcMain.handle('space:invalidate', async (_, paths: string[]) => {
+    invalidateSpacePaths(paths)
   })
 
   ipcMain.handle('scan:duplicates', async (_, searchPaths: string[]) => {

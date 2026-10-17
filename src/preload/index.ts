@@ -44,6 +44,12 @@ const electronAPI = {
   scanDir: (dirPath: string): Promise<TreeNode[]> => ipcRenderer.invoke('fs:scanDir', dirPath),
   fileMeta: (filePath: string): Promise<FileMeta | null> => ipcRenderer.invoke('fs:fileMeta', filePath),
 
+  // Space Lens: SQLite-backed full index
+  spaceIsFresh: (rootPath: string): Promise<boolean> => ipcRenderer.invoke('space:isFresh', rootPath),
+  spaceIndex: (rootPath: string): Promise<number> => ipcRenderer.invoke('space:index', rootPath),
+  spaceQuery: (parentPath: string): Promise<TreeNode[]> => ipcRenderer.invoke('space:query', parentPath),
+  spaceInvalidate: (paths: string[]): Promise<void> => ipcRenderer.invoke('space:invalidate', paths),
+
   // Auto-updater
   checkUpdate: (): Promise<void>  => ipcRenderer.invoke('app:checkUpdate'),
   installUpdate: (): Promise<void> => ipcRenderer.invoke('app:installUpdate'),

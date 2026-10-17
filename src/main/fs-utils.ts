@@ -5,6 +5,7 @@
  */
 import fs from 'fs'
 import path from 'path'
+import type { BrowserWindow } from 'electron'
 
 export interface TreeNode {
   name: string
@@ -177,6 +178,79 @@ export function scanDirOneLevel(dirPath: string): TreeNode[] {
   }
 
   return results.sort((a, b) => b.size - a.size)
+}
+
+// Inline type to avoid circular dep with db.ts
+interface SpaceNodeOut {
+  path: string; parentPath: string; name: string
+  size: number; sizeOnDisk: number; isDir: boolean
+  childCount: number; hasChildren: boolean; ext: string
+  modifiedAt: string; isSymlink: boolean; permissions: string
+  kind: string; owner: string; rootPath: string; scannedAt: number
+}
+
+/**
+ * Full post-order recursive walk of rootPath.
+ * Child sizes are computed before parents — guarantees correct aggregated sizes.
+ * Emits scan:file events (throttled 80ms) for live progress display.
+ */
+export function buildSpaceIndex(rootPath: string, win: BrowserWindow | null): SpaceNodeOut[] {
+  const scannedAt = Date.now()
+  const allNodes: SpaceNodeOut[] = []
+  let lastEmit = 0
+
+  function maybeEmit(p: string) {
+    const now = Date.now()
+    if (now - lastEmit >= 80) {
+      win?.webContents.send('scan:file', p)
+      lastEmit = now
+    }
+  }
+
+  function walk(dirPath: string): { size: number; sizeOnDisk: number } {
+    let dirSize = 0, dirSod = 0
+    let entries: string[]
+    try { entries = fs.readdirSync(dirPath) } catch { return { size: 0, sizeOnDisk: 0 } }
+
+    for (const entryName of entries) {
+      if (entryName === '.DS_Store') continue
+      const full = path.join(dirPath, entryName)
+      const st = safeStatSync(full)
+      if (!st) continue
+
+      maybeEmit(full)
+      const isSymlink  = st.isSymbolicLink()
+      const isDir      = st.isDirectory() && !isSymlink
+      const ext        = isDir ? '' : path.extname(entryName)
+      let size = 0, sod = 0, childCount = 0, hasChildren = false
+
+      if (isDir) {
+        const sub = walk(full)
+        size = sub.size; sod = sub.sizeOnDisk
+        try {
+          const kids = fs.readdirSync(full)
+          childCount = kids.length; hasChildren = childCount > 0
+        } catch { /* permission denied */ }
+      } else {
+        size = st.size; sod = st.blocks * 512
+      }
+
+      dirSize += size; dirSod += sod
+      allNodes.push({
+        path: full, parentPath: dirPath, name: entryName,
+        size, sizeOnDisk: sod, isDir, childCount, hasChildren, ext,
+        modifiedAt: st.mtime.toISOString(), isSymlink,
+        permissions: modeToPerms(st.mode),
+        kind: extKind(ext, isDir),
+        owner: String(st.uid), rootPath, scannedAt,
+      })
+    }
+
+    return { size: dirSize, sizeOnDisk: dirSod }
+  }
+
+  walk(rootPath)
+  return allNodes
 }
 
 /** Full metadata for the properties panel */

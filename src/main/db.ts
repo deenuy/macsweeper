@@ -114,6 +114,33 @@ function migrate(d: Database.Database): void {
       INSERT OR REPLACE INTO schema_version(version) VALUES(1);
     `)
   }
+
+  if (current < 2) {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS space_tree (
+        path         TEXT    PRIMARY KEY,
+        parent_path  TEXT    NOT NULL,
+        name         TEXT    NOT NULL,
+        size         INTEGER NOT NULL DEFAULT 0,
+        size_on_disk INTEGER NOT NULL DEFAULT 0,
+        is_dir       INTEGER NOT NULL DEFAULT 0,
+        child_count  INTEGER NOT NULL DEFAULT 0,
+        has_children INTEGER NOT NULL DEFAULT 0,
+        ext          TEXT    NOT NULL DEFAULT '',
+        modified_at  TEXT    NOT NULL DEFAULT '',
+        is_symlink   INTEGER NOT NULL DEFAULT 0,
+        permissions  TEXT    NOT NULL DEFAULT '',
+        kind         TEXT    NOT NULL DEFAULT 'File',
+        owner        TEXT    NOT NULL DEFAULT '',
+        root_path    TEXT    NOT NULL,
+        scanned_at   INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_space_parent ON space_tree(parent_path, size DESC);
+      CREATE INDEX IF NOT EXISTS idx_space_root   ON space_tree(root_path);
+
+      INSERT OR REPLACE INTO schema_version(version) VALUES(2);
+    `)
+  }
 }
 
 // ── Scan sessions ──────────────────────────────────────────────────────────────
@@ -280,4 +307,88 @@ export function setPref(key: string, value: string): void {
   openDb()
     .prepare(`INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)`)
     .run(key, value)
+}
+
+// ── Space Lens tree index ──────────────────────────────────────────────────────
+const SPACE_TREE_TTL_MS = 60 * 60 * 1000  // 1 hour
+
+export function isSpaceTreeFresh(rootPath: string): boolean {
+  const row = openDb()
+    .prepare(`SELECT MAX(scanned_at) AS ts FROM space_tree WHERE root_path = ?`)
+    .get(rootPath) as { ts: number | null }
+  if (!row?.ts) return false
+  return Date.now() - row.ts < SPACE_TREE_TTL_MS
+}
+
+export interface SpaceNode {
+  path: string
+  parentPath: string
+  name: string
+  size: number
+  sizeOnDisk: number
+  isDir: boolean
+  childCount: number
+  hasChildren: boolean
+  ext: string
+  modifiedAt: string
+  isSymlink: boolean
+  permissions: string
+  kind: string
+  owner: string
+  rootPath: string
+  scannedAt: number
+}
+
+export function insertSpaceTreeBatch(nodes: SpaceNode[]): void {
+  const d = openDb()
+  const insert = d.prepare(`
+    INSERT OR REPLACE INTO space_tree
+      (path, parent_path, name, size, size_on_disk, is_dir, child_count, has_children,
+       ext, modified_at, is_symlink, permissions, kind, owner, root_path, scanned_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `)
+  const insertAll = d.transaction((rows: SpaceNode[]) => {
+    for (const n of rows) {
+      insert.run(
+        n.path, n.parentPath, n.name, n.size, n.sizeOnDisk,
+        n.isDir ? 1 : 0, n.childCount, n.hasChildren ? 1 : 0,
+        n.ext, n.modifiedAt, n.isSymlink ? 1 : 0, n.permissions,
+        n.kind, n.owner, n.rootPath, n.scannedAt
+      )
+    }
+  })
+  insertAll(nodes)
+}
+
+export function querySpaceChildren(parentPath: string): import('../shared/types').TreeNode[] {
+  const rows = openDb()
+    .prepare(`
+      SELECT path, name, size, size_on_disk AS sizeOnDisk, is_dir AS isDir,
+             child_count AS childCount, has_children AS hasChildren, ext,
+             modified_at AS modifiedAt, is_symlink AS isSymlink, permissions, kind, owner
+      FROM space_tree
+      WHERE parent_path = ?
+      ORDER BY size DESC
+      LIMIT 2000
+    `)
+    .all(parentPath) as any[]
+  return rows.map(r => ({
+    ...r,
+    isDir:       Boolean(r.isDir),
+    hasChildren: Boolean(r.hasChildren),
+    isSymlink:   Boolean(r.isSymlink),
+    createdAt:   '',
+    accessedAt:  '',
+  }))
+}
+
+export function clearSpaceTree(rootPath: string): void {
+  openDb().prepare(`DELETE FROM space_tree WHERE root_path = ?`).run(rootPath)
+}
+
+export function invalidateSpacePaths(paths: string[]): void {
+  const d = openDb()
+  const del = d.prepare(`DELETE FROM space_tree WHERE path = ?`)
+  const delAll = d.transaction((ps: string[]) => { for (const p of ps) del.run(p) })
+  delAll(paths)
 }
