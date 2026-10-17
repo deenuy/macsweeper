@@ -577,15 +577,13 @@ export default function SpaceLens() {
   const handleInitialScan = async () => {
     const home = window.electron.homeDir
     setScanning(true)
-    setScanFile('')
-    const cleanup = window.electron.onScanFile(setScanFile)
+    setScanFile(home)
     try {
       const nodes = await doScan(home)
       setCurrentPath(home); setNavStack([])
       setChecked(new Set()); setSelected(null)
       setCurrentNodes(nodes)
     } finally {
-      cleanup()
       setScanning(false)
       setScanFile('')
     }
