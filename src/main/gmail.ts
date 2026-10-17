@@ -70,6 +70,25 @@ function authedClient(email: string) {
 export function getCredentialsPath() { return CREDS_PATH }
 export function hasCredentials() { return loadCredentials() !== null }
 
+// Fixed port so the redirect URI is stable across re-renders/re-calls.
+const OAUTH_PORT = 45678
+const REDIRECT_URI = `http://127.0.0.1:${OAUTH_PORT}`
+
+// Singleton: only one auth flow at a time.
+let activeServer: http.Server | null = null
+let activeReject: ((e: Error) => void) | null = null
+
+function closeActiveServer() {
+  if (activeServer) {
+    try { activeServer.close() } catch { /* ignore */ }
+    activeServer = null
+  }
+  if (activeReject) {
+    activeReject(new Error('Auth superseded'))
+    activeReject = null
+  }
+}
+
 /**
  * Opens the system browser for Gmail OAuth.
  * Returns a promise that resolves with the authed email when done.
@@ -78,75 +97,85 @@ export async function startGmailAuth(): Promise<string> {
   const creds = loadCredentials()
   if (!creds) throw new Error('NO_CREDENTIALS')
 
+  // Close any in-progress auth before starting a new one.
+  closeActiveServer()
+
   return new Promise<string>((resolve, reject) => {
-    // Temporary local server to catch the OAuth redirect
-    const server = http.createServer()
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address()
-      if (!addr || typeof addr === 'string') { reject(new Error('Server failed')); return }
-      const port = addr.port
-      const redirectUri = `http://127.0.0.1:${port}`
-      const auth = makeOAuth(redirectUri)
+    activeReject = reject
 
-      const authUrl = auth.generateAuthUrl({
-        access_type: 'offline',
-        scope: SCOPES,
-        prompt: 'consent',
-      })
+    const auth = makeOAuth(REDIRECT_URI)
+    const authUrl = auth.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      prompt: 'consent',
+    })
 
-      // Open the auth URL in the user's default browser
+    const html = (msg: string) =>
+      `<html><body style="font-family:sans-serif;padding:32px"><h2>${msg}</h2><p>You can close this tab.</p></body></html>`
+
+    let handled = false
+
+    const server = http.createServer(async (req, res) => {
+      if (handled) { res.end(); return }
+      handled = true
+
+      const url = new URL(req.url ?? '/', REDIRECT_URI)
+      const code = url.searchParams.get('code')
+      const error = url.searchParams.get('error')
+
+      if (error || !code) {
+        res.writeHead(400, { 'Content-Type': 'text/html' })
+        res.end(html('Authentication cancelled.'))
+        closeActiveServer()
+        reject(new Error(error ?? 'No auth code'))
+        return
+      }
+
+      try {
+        const { tokens } = await auth.getToken(code)
+        auth.setCredentials(tokens)
+
+        const gmail = google.gmail({ version: 'v1', auth })
+        const profile = await gmail.users.getProfile({ userId: 'me' })
+        const email = profile.data.emailAddress!
+
+        const store = loadTokens()
+        store[email] = tokens
+        saveTokens(store)
+
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(html(`Connected as ${email}! You can close this tab.`))
+        closeActiveServer()
+        activeReject = null
+        resolve(email)
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'text/html' })
+        res.end(html('Authentication error. Please try again.'))
+        closeActiveServer()
+        reject(e)
+      }
+    })
+
+    activeServer = server
+
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        // Port busy — kill whatever is there and retry once
+        const killer = http.createServer()
+        killer.listen(OAUTH_PORT, '127.0.0.1', () => killer.close())
+        setTimeout(() => server.listen(OAUTH_PORT, '127.0.0.1'), 200)
+      } else {
+        reject(err)
+      }
+    })
+
+    server.listen(OAUTH_PORT, '127.0.0.1', () => {
       shell.openExternal(authUrl)
-
-      let handled = false
-      server.on('request', async (req, res) => {
-        if (handled) return
-        handled = true
-
-        const html = (msg: string) =>
-          `<html><body style="font-family:sans-serif;padding:32px"><h2>${msg}</h2><p>You can close this tab.</p></body></html>`
-
-        const url = new URL(req.url ?? '/', redirectUri)
-        const code = url.searchParams.get('code')
-        const error = url.searchParams.get('error')
-
-        if (error || !code) {
-          res.writeHead(400, { 'Content-Type': 'text/html' })
-          res.end(html('Authentication cancelled.'))
-          server.close()
-          reject(new Error(error ?? 'No auth code'))
-          return
-        }
-
-        try {
-          const { tokens } = await auth.getToken(code)
-          auth.setCredentials(tokens)
-
-          // Get the email address
-          const gmail = google.gmail({ version: 'v1', auth })
-          const profile = await gmail.users.getProfile({ userId: 'me' })
-          const email = profile.data.emailAddress!
-
-          // Persist tokens keyed by email
-          const store = loadTokens()
-          store[email] = tokens
-          saveTokens(store)
-
-          res.writeHead(200, { 'Content-Type': 'text/html' })
-          res.end(html(`Connected as ${email}!`))
-          server.close()
-          resolve(email)
-        } catch (e) {
-          res.writeHead(500, { 'Content-Type': 'text/html' })
-          res.end(html('Authentication error.'))
-          server.close()
-          reject(e)
-        }
-      })
 
       // Timeout after 5 minutes
       setTimeout(() => {
         if (!handled) {
-          server.close()
+          closeActiveServer()
           reject(new Error('Auth timeout'))
         }
       }, 5 * 60 * 1000)
