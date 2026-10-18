@@ -7,6 +7,7 @@ const electronAPI = {
   getVolumes: (): Promise<VolumeInfo[]> => ipcRenderer.invoke('disk:volumes'),
   getSystemSnapshot: (): Promise<SystemSnapshot> => ipcRenderer.invoke('system:snapshot'),
   ejectDisk: (volPath: string): Promise<void> => ipcRenderer.invoke('disk:eject', volPath),
+  getTotalFreed: (): Promise<number> => ipcRenderer.invoke('db:totalFreed'),
 
   scanCategory: (category: string): Promise<FileItem[]> =>
     ipcRenderer.invoke('scan:category', category),

@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { registerIpcHandlers } from './ipc'
+import { startSnapshotRefresh } from './system-stats'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -136,6 +137,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
   buildMenu()
+  startSnapshotRefresh()
   const win = createWindow()
   setupAutoUpdater(win)
 

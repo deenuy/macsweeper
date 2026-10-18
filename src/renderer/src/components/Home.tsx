@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import type { SystemSnapshot } from '../../../shared/types'
 import type { Page, PageTheme } from '../App'
+import { useTilt } from '../hooks/useTilt'
 
 function fmtBytes(n: number): string {
   if (n >= 1e12) return (n / 1e12).toFixed(2) + ' TB'
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GB'
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB'
   if (n >= 1e6) return (n / 1e6).toFixed(0) + ' MB'
   return (n / 1e3).toFixed(0) + ' KB'
 }
@@ -14,189 +15,141 @@ function fmtRate(kbps: number): string {
   return kbps.toFixed(0) + ' KB/s'
 }
 
+function today(): string {
+  return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
 const HEALTH_COLOR: Record<string, string> = {
-  Excellent: '#22c55e',
-  Good: '#86efac',
-  Fair: '#f97316',
-  Poor: '#ef4444',
+  Excellent: '#22d3ee',
+  Good:      '#22c55e',
+  Fair:      '#f97316',
+  Poor:      '#ef4444',
 }
 
-function MacIcon() {
+// ── Mac laptop illustration with glowing ring ──────────────────────────────
+function MacIllustration({ health }: { health: string }) {
+  const glowColor = HEALTH_COLOR[health] ?? '#22d3ee'
   return (
-    <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
-      <rect x="4" y="6" width="44" height="32" rx="4" fill="rgba(100,140,200,0.35)" stroke="rgba(150,190,255,0.50)" strokeWidth="1.5"/>
-      <rect x="8" y="10" width="36" height="24" rx="2" fill="rgba(30,50,120,0.45)"/>
-      <rect x="4" y="10" width="44" height="2" rx="1" fill="rgba(180,210,255,0.10)"/>
-      <rect x="16" y="39" width="20" height="3" rx="1" fill="rgba(150,190,255,0.35)"/>
-      <rect x="10" y="42" width="32" height="2.5" rx="1.25" fill="rgba(150,190,255,0.28)"/>
-      <rect x="14" y="14" width="24" height="15" rx="1" fill="rgba(60,90,180,0.30)"/>
-      <circle cx="26" cy="21" r="3" fill="rgba(140,180,255,0.45)"/>
-    </svg>
-  )
-}
+    <div style={{ position: 'relative', width: 160, height: 140, flexShrink: 0 }}>
+      {/* Outer glow ring */}
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: '50%',
+        background: `radial-gradient(circle, ${glowColor}22 0%, transparent 70%)`,
+        transform: 'scale(1.2)',
+      }} />
+      <svg width="160" height="140" viewBox="0 0 160 140" fill="none" style={{ position: 'relative', zIndex: 1 }}>
+        <defs>
+          <radialGradient id="ringGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={glowColor} stopOpacity="0.5"/>
+            <stop offset="100%" stopColor={glowColor} stopOpacity="0"/>
+          </radialGradient>
+          <linearGradient id="screenGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#1e40af" stopOpacity="0.8"/>
+            <stop offset="100%" stopColor="#0e7490" stopOpacity="0.6"/>
+          </linearGradient>
+          <linearGradient id="lidGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1e293b"/>
+            <stop offset="100%" stopColor="#0f172a"/>
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
 
-function StorageIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <rect x="2" y="6" width="18" height="12" rx="2.5" fill="rgba(130,160,220,0.40)" stroke="rgba(160,190,255,0.40)" strokeWidth="1.2"/>
-      <rect x="2" y="12" width="18" height="6" rx="1.5" fill="rgba(100,130,190,0.30)"/>
-      <circle cx="5" cy="15" r="1.3" fill="rgba(160,190,255,0.70)"/>
-      <circle cx="17" cy="15" r="1" fill="rgba(160,190,255,0.50)"/>
-      <rect x="5" y="8.5" width="8" height="2" rx="1" fill="rgba(190,210,255,0.30)"/>
-    </svg>
-  )
-}
+        {/* Glow halo */}
+        <ellipse cx="80" cy="78" rx="58" ry="52" fill="none"
+          stroke={glowColor} strokeWidth="1.5" opacity="0.35" filter="url(#glow)"/>
+        <ellipse cx="80" cy="78" rx="46" ry="40" fill="none"
+          stroke={glowColor} strokeWidth="1" opacity="0.25"/>
 
-function MemoryIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <rect x="1" y="7" width="20" height="10" rx="2" fill="rgba(155,92,232,0.35)" stroke="rgba(180,140,255,0.40)" strokeWidth="1.2"/>
-      <rect x="4" y="10" width="3" height="4" rx="0.5" fill="rgba(180,140,255,0.60)"/>
-      <rect x="9" y="10" width="3" height="4" rx="0.5" fill="rgba(180,140,255,0.50)"/>
-      <rect x="14" y="10" width="3" height="4" rx="0.5" fill="rgba(180,140,255,0.60)"/>
-      <rect x="5.5" y="5" width="1" height="2" rx="0.5" fill="rgba(180,140,255,0.45)"/>
-      <rect x="10.5" y="5" width="1" height="2" rx="0.5" fill="rgba(180,140,255,0.45)"/>
-      <rect x="15" y="5" width="1" height="2" rx="0.5" fill="rgba(180,140,255,0.45)"/>
-      <rect x="5.5" y="17" width="1" height="2" rx="0.5" fill="rgba(180,140,255,0.35)"/>
-      <rect x="10.5" y="17" width="1" height="2" rx="0.5" fill="rgba(180,140,255,0.35)"/>
-      <rect x="15" y="17" width="1" height="2" rx="0.5" fill="rgba(180,140,255,0.35)"/>
-    </svg>
-  )
-}
+        {/* Screen lid */}
+        <rect x="22" y="14" width="116" height="82" rx="8" fill="url(#lidGrad)"
+          stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
+        {/* Screen bezel */}
+        <rect x="28" y="20" width="104" height="70" rx="4" fill="#060d1f"/>
+        {/* Screen glow content */}
+        <rect x="32" y="24" width="96" height="62" rx="3" fill="url(#screenGrad)" opacity="0.6"/>
+        {/* Screen shine */}
+        <rect x="32" y="24" width="96" height="10" rx="3" fill="rgba(255,255,255,0.05)"/>
+        {/* Notch */}
+        <rect x="70" y="14" width="20" height="5" rx="2.5" fill="#060d1f"/>
+        {/* Camera dot */}
+        <circle cx="80" cy="17" r="1.5" fill="rgba(255,255,255,0.15)"/>
 
-function BatteryIcon({ pct }: { pct: number }) {
-  const fill = pct > 20 ? '#22c55e' : '#ef4444'
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <rect x="1" y="6" width="17" height="10" rx="2" fill="none" stroke="rgba(200,200,200,0.45)" strokeWidth="1.3"/>
-      <rect x="18" y="9" width="2.5" height="4" rx="1" fill="rgba(200,200,200,0.35)"/>
-      <rect x="2.5" y="7.5" width={Math.max(1, (14 * pct) / 100)} height="7" rx="1" fill={fill} opacity="0.75"/>
-    </svg>
-  )
-}
+        {/* MacBook icon on screen */}
+        <circle cx="80" cy="56" r="12" fill={glowColor} opacity="0.2"/>
+        <path d="M74 56 L80 50 L86 56 L80 62 Z" fill={glowColor} opacity="0.7"/>
 
-function CpuIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <rect x="5" y="5" width="12" height="12" rx="2" fill="rgba(100,180,200,0.35)" stroke="rgba(100,200,220,0.40)" strokeWidth="1.2"/>
-      <rect x="7.5" y="7.5" width="7" height="7" rx="1" fill="rgba(80,160,200,0.40)"/>
-      <rect x="8.5" y="8.5" width="5" height="5" rx="0.5" fill="rgba(120,200,230,0.30)"/>
-      <rect x="7" y="1.5" width="1" height="3" rx="0.5" fill="rgba(100,200,220,0.45)"/>
-      <rect x="11" y="1.5" width="1" height="3" rx="0.5" fill="rgba(100,200,220,0.45)"/>
-      <rect x="14" y="1.5" width="1" height="3" rx="0.5" fill="rgba(100,200,220,0.45)"/>
-      <rect x="7" y="17.5" width="1" height="3" rx="0.5" fill="rgba(100,200,220,0.35)"/>
-      <rect x="11" y="17.5" width="1" height="3" rx="0.5" fill="rgba(100,200,220,0.35)"/>
-      <rect x="14" y="17.5" width="1" height="3" rx="0.5" fill="rgba(100,200,220,0.35)"/>
-      <rect x="1.5" y="7" width="3" height="1" rx="0.5" fill="rgba(100,200,220,0.45)"/>
-      <rect x="1.5" y="11" width="3" height="1" rx="0.5" fill="rgba(100,200,220,0.45)"/>
-      <rect x="1.5" y="14" width="3" height="1" rx="0.5" fill="rgba(100,200,220,0.45)"/>
-      <rect x="17.5" y="7" width="3" height="1" rx="0.5" fill="rgba(100,200,220,0.35)"/>
-      <rect x="17.5" y="11" width="3" height="1" rx="0.5" fill="rgba(100,200,220,0.35)"/>
-      <rect x="17.5" y="14" width="3" height="1" rx="0.5" fill="rgba(100,200,220,0.35)"/>
-    </svg>
-  )
-}
-
-function WifiIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <path d="M11 16.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" fill="rgba(200,200,200,0.75)"/>
-      <path d="M7.5 13.5a5 5 0 0 1 7 0" stroke="rgba(200,200,200,0.60)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
-      <path d="M4.5 10.5a9 9 0 0 1 13 0" stroke="rgba(200,200,200,0.40)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
-      <path d="M2 7.5a13 13 0 0 1 18 0" stroke="rgba(200,200,200,0.22)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
-    </svg>
-  )
-}
-
-function StatBar({ value, max = 100, color }: { value: number; max?: number; color: string }) {
-  const pct = Math.min(100, Math.round((value / max) * 100))
-  return (
-    <div style={{ height: 4, background: 'rgba(255,255,255,0.10)', borderRadius: 3, overflow: 'hidden', marginTop: 6 }}>
-      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.6s ease' }} />
+        {/* Hinge */}
+        <rect x="22" y="96" width="116" height="3" rx="1.5" fill="rgba(255,255,255,0.06)"/>
+        {/* Base / keyboard deck */}
+        <rect x="14" y="99" width="132" height="22" rx="4" fill="url(#lidGrad)"
+          stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
+        {/* Trackpad */}
+        <rect x="60" y="106" width="40" height="8" rx="2" fill="rgba(255,255,255,0.06)"
+          stroke="rgba(255,255,255,0.08)" strokeWidth="0.5"/>
+        {/* Bottom feet area */}
+        <rect x="14" y="121" width="132" height="3" rx="1.5" fill="rgba(0,0,0,0.3)"/>
+      </svg>
     </div>
   )
 }
 
-interface WidgetProps { style?: React.CSSProperties; children: React.ReactNode }
-function Widget({ style, children }: WidgetProps) {
+// ── Gradient progress bar ──────────────────────────────────────────────────
+function GradBar({ value, max = 100, warn = 75, danger = 90 }: { value: number; max?: number; warn?: number; danger?: number }) {
+  const pct = Math.min(100, (value / max) * 100)
+  const color = pct >= danger ? 'linear-gradient(90deg,#ef4444,#dc2626)'
+    : pct >= warn ? 'linear-gradient(90deg,#f97316,#ea580c)'
+    : 'linear-gradient(90deg,#22d3ee,#6366f1)'
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.05)',
-      border: '1px solid rgba(255,255,255,0.10)',
-      borderRadius: 16, padding: '16px 18px',
-      display: 'flex', flexDirection: 'column', gap: 4,
-      ...style,
-    }}>
-      {children}
+    <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 4, transition: 'width 0.8s ease' }}/>
     </div>
   )
 }
 
-function FreeUpButton({ onClick }: { onClick: () => void }) {
+// ── Compact metric row item ────────────────────────────────────────────────
+function MetricRow({ label, value, sub, pct, warn, danger }: {
+  label: string; value: string; sub?: string; pct?: number; warn?: number; danger?: number
+}) {
   return (
-    <button onClick={onClick} style={{
-      marginTop: 8, alignSelf: 'flex-start',
-      background: 'none', border: 'none', padding: 0,
-      color: '#a78bfa', fontSize: 13, fontWeight: 700,
-      cursor: 'pointer', letterSpacing: '0.01em',
-    }}
-      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#c4b5fd'}
-      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#a78bfa'}
-    >
-      Free Up
-    </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.50)', fontWeight: 500 }}>{label}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      </div>
+      {pct !== undefined && <GradBar value={pct} warn={warn} danger={danger} />}
+      {sub && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{sub}</span>}
+    </div>
   )
 }
 
-function EjectButton({ path }: { path: string }) {
-  const [ejecting, setEjecting] = useState(false)
-  const eject = async () => {
-    setEjecting(true)
-    try {
-      await window.electron.ejectDisk(path)
-    } catch {}
-    setTimeout(() => setEjecting(false), 1500)
-  }
-  return (
-    <button onClick={eject} title="Eject" style={{
-      background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-      borderRadius: 6, padding: '3px 8px', cursor: 'pointer', color: 'rgba(255,255,255,0.65)', fontSize: 11,
-    }}>
-      {ejecting ? '...' : '⏏'}
-    </button>
-  )
-}
-
-function getRecommendation(snap: SystemSnapshot, onNavigate: (p: Page) => void) {
-  const diskFreePct = snap.disk.totalBytes > 0
-    ? (snap.disk.freeBytes / snap.disk.totalBytes) * 100 : 50
+function getRecommendation(snap: SystemSnapshot, totalFreed: number, onNavigate: (p: Page) => void) {
+  const diskFreePct = snap.disk.totalBytes > 0 ? (snap.disk.freeBytes / snap.disk.totalBytes) * 100 : 50
   if (diskFreePct < 10) return {
-    icon: '💽',
-    title: 'Storage is running low',
-    body: `Only ${fmtBytes(snap.disk.freeBytes)} free. Scan and remove large files and junk to reclaim space.`,
-    action: 'Scan for Junk',
-    onAction: () => onNavigate('junk'),
+    icon: '💽', color: '#f97316',
+    title: 'Storage running low',
+    body: `Only ${fmtBytes(snap.disk.freeBytes)} free. Scan and remove junk to reclaim space.`,
+    action: 'Clean Now', onAction: () => onNavigate('junk'),
   }
-  if (snap.memory.pressurePercent > 80) return {
-    icon: '🧠',
+  if (snap.memory.pressurePercent > 75) return {
+    icon: '🧠', color: '#a78bfa',
     title: 'High memory pressure',
-    body: `Memory pressure is at ${snap.memory.pressurePercent}%. Clearing caches can help free up RAM.`,
-    action: 'Clean Caches',
-    onAction: () => onNavigate('junk'),
+    body: `Memory is at ${snap.memory.pressurePercent}%. Clearing caches can free up RAM.`,
+    action: 'Clean Caches', onAction: () => onNavigate('junk'),
   }
-  if (snap.connectedDevices.length > 0) return {
-    icon: '💽',
-    title: 'External drives connected',
-    body: `${snap.connectedDevices.map(d => d.name).join(', ')} ${snap.connectedDevices.length === 1 ? 'is' : 'are'} connected. Use Space Lens to scan and manage storage.`,
-    action: 'Open Space Lens',
-    onAction: () => onNavigate('space-lens'),
+  if (totalFreed === 0) return {
+    icon: '✨', color: '#22d3ee',
+    title: 'Run your first scan',
+    body: 'Scan for junk, duplicates, and large files to see how much you can free up.',
+    action: 'Start Scan', onAction: () => onNavigate('junk'),
   }
   return {
-    icon: '✨',
+    icon: '🔍', color: '#22c55e',
     title: 'Your Mac looks healthy',
-    body: 'Run a smart scan to find hidden junk, duplicates, and large files you can safely remove.',
-    action: 'Smart Scan',
-    onAction: () => onNavigate('junk'),
+    body: `You've freed ${fmtBytes(totalFreed)} total. Run a scan to check for new junk.`,
+    action: 'Scan Again', onAction: () => onNavigate('junk'),
   }
 }
 
@@ -207,223 +160,235 @@ interface Props {
 
 export default function Home({ onNavigate, theme }: Props) {
   const [snap, setSnap] = useState<SystemSnapshot | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [totalFreed, setTotalFreed] = useState(0)
   const [fdaGranted, setFdaGranted] = useState<boolean | null>(null)
-
-  const refresh = () => {
-    window.electron.getSystemSnapshot().then(s => {
-      setSnap(s)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }
+  const { onMouseMove, onMouseLeave, tiltTransform, tiltTransition } = useTilt(18)
 
   useEffect(() => {
     window.electron.checkFDA().then(setFdaGranted).catch(() => setFdaGranted(true))
-    refresh()
-    const id = setInterval(refresh, 4000)
+    window.electron.getTotalFreed().then(setTotalFreed).catch(() => {})
+
+    const load = () => window.electron.getSystemSnapshot().then(setSnap).catch(() => {})
+    load()
+    const id = setInterval(load, 4000)
     return () => clearInterval(id)
   }, [])
 
-  const healthColor = snap ? HEALTH_COLOR[snap.healthScore] ?? '#22c55e' : 'rgba(255,255,255,0.4)'
-  const rec = snap ? getRecommendation(snap, onNavigate) : null
-
-  const diskPct = snap && snap.disk.totalBytes > 0
-    ? (snap.disk.usedBytes / snap.disk.totalBytes) * 100 : 0
-  const memColor = snap && snap.memory.pressurePercent > 80 ? '#f97316'
-    : snap && snap.memory.pressurePercent > 60 ? '#eab308' : '#a78bfa'
-  const cpuColor = snap && snap.cpu.loadPercent > 80 ? '#ef4444'
-    : snap && snap.cpu.loadPercent > 60 ? '#f97316' : '#67e8f9'
+  const health = snap?.healthScore ?? 'Excellent'
+  const healthColor = HEALTH_COLOR[health] ?? '#22d3ee'
+  const diskUsedPct = snap && snap.disk.totalBytes > 0 ? (snap.disk.usedBytes / snap.disk.totalBytes) * 100 : 0
+  const rec = snap ? getRecommendation(snap, totalFreed, onNavigate) : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.03em' }}>
-              Mac Health:
-            </span>
-            <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.03em', color: healthColor, transition: 'color 0.4s ease' }}>
-              {loading ? '...' : snap?.healthScore ?? 'Checking'}
-            </span>
-            {!loading && snap && (
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: healthColor, boxShadow: `0 0 8px ${healthColor}`, marginLeft: 2, transition: 'background 0.4s ease' }} />
-            )}
-          </div>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>{snap?.macModel ?? 'Mac'}</div>
-        </div>
-        <MacIcon />
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em' }}>
+          My Mac Activity
+        </h1>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>Updated {today()}</span>
       </div>
 
-      {/* FDA status */}
-      {fdaGranted !== null && (
+      {/* Main row: hero + right column */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, flex: 1, minHeight: 0 }}>
+
+        {/* LEFT: Mac Health hero card */}
         <div
-          onClick={fdaGranted ? undefined : () => window.electron.openFDASettings()}
+          onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
           style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '10px 16px', borderRadius: 12, cursor: fdaGranted ? 'default' : 'pointer',
-            background: fdaGranted ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
-            border: `1px solid ${fdaGranted ? 'rgba(34,197,94,0.20)' : 'rgba(239,68,68,0.20)'}`,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 20, padding: '22px 24px',
+            display: 'flex', flexDirection: 'column', gap: 14,
+            transform: tiltTransform, transition: tiltTransition,
+            cursor: 'default', overflow: 'hidden', position: 'relative',
           }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 20, height: 20, borderRadius: '50%', background: fdaGranted ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.20)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {fdaGranted ? (
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="#22c55e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M2 5.5l2.5 2.5 4.5-4.5"/>
-                </svg>
-              ) : (
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round">
-                  <path d="M5.5 3v3M5.5 8h.01"/>
-                </svg>
+          {/* Background glow blob */}
+          <div style={{
+            position: 'absolute', top: -20, right: -20, width: 200, height: 200,
+            borderRadius: '50%', background: `${healthColor}15`, pointerEvents: 'none',
+          }}/>
+
+          {/* Health + model row */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: 'rgba(255,255,255,0.65)' }}>Mac Health:</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: healthColor, letterSpacing: '-0.02em', transition: 'color 0.4s' }}>
+                {snap ? health : '...'}
+              </span>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: healthColor,
+                boxShadow: `0 0 8px ${healthColor}`, transition: 'all 0.4s', flexShrink: 0 }}/>
+            </div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.40)' }}>{snap?.macModel ?? 'Mac'}</div>
+          </div>
+
+          {/* Mac illustration -- centered */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBlock: 4 }}>
+            <MacIllustration health={health} />
+          </div>
+
+          {/* Disk usage */}
+          <div style={{ marginTop: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Macintosh HD</span>
+              {snap && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.50)' }}>
+                  {fmtBytes(snap.disk.usedBytes)} of {fmtBytes(snap.disk.totalBytes)} used
+                </span>
               )}
             </div>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>Full Disk Access</span>
-          </div>
-          <span style={{ fontSize: 12, color: fdaGranted ? '#86efac' : '#fca5a5', fontWeight: 600 }}>
-            {fdaGranted ? 'Granted' : 'Grant Access'}
-          </span>
-        </div>
-      )}
-
-      {/* Disk + Memory row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Widget>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <StorageIcon />
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Macintosh HD</span>
-          </div>
-          <div style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
-            {snap ? `Available: ${fmtBytes(snap.disk.freeBytes)}` : '---'}
-          </div>
-          {snap && <StatBar value={diskPct} color={diskPct > 85 ? '#ef4444' : diskPct > 70 ? '#f97316' : `${theme.accent}CC`} />}
-          <FreeUpButton onClick={() => onNavigate('space-lens')} />
-        </Widget>
-
-        <Widget>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <MemoryIcon />
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Memory</span>
-          </div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: memColor }}>
-            {snap ? `Pressure: ${snap.memory.pressurePercent}%` : '---'}
-          </div>
-          {snap && <StatBar value={snap.memory.pressurePercent} color={memColor} />}
-          <FreeUpButton onClick={() => onNavigate('junk')} />
-        </Widget>
-      </div>
-
-      {/* Battery + CPU row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Widget>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <BatteryIcon pct={snap?.battery.percent ?? 100} />
-              <span style={{ fontSize: 14, fontWeight: 700 }}>Battery</span>
-            </div>
-            <span style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-              {snap ? `${snap.battery.percent}%` : '--'}
-            </span>
-          </div>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
-            {!snap ? '' : snap.battery.fullyCharged ? 'Fully charged'
-              : snap.battery.charging ? 'Charging…'
-              : snap.battery.hasBattery ? 'On battery'
-              : 'Plugged in'}
-          </span>
-        </Widget>
-
-        <Widget>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CpuIcon />
-              <span style={{ fontSize: 14, fontWeight: 700 }}>CPU</span>
-            </div>
-            <span style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: cpuColor }}>
-              {snap ? `${snap.cpu.loadPercent}%` : '--'}
-            </span>
-          </div>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
-            {snap ? `Load: ${snap.cpu.loadPercent}%` : ''}
-          </span>
-          {snap && <StatBar value={snap.cpu.loadPercent} color={cpuColor} />}
-        </Widget>
-      </div>
-
-      {/* Wi-Fi */}
-      <Widget style={{ flexDirection: 'row', alignItems: 'center', gap: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 'auto' }}>
-          <WifiIcon />
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{snap?.network.ssid || 'Wi-Fi'}</div>
+            <GradBar value={diskUsedPct} warn={70} danger={85} />
             {snap && (
-              <div style={{ display: 'flex', gap: 14, marginTop: 3 }}>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
-                  <span style={{ color: '#86efac' }}>↑</span> {fmtRate(snap.network.upKBps)}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.40)' }}>
+                  {fmtBytes(snap.disk.freeBytes)} free
                 </span>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
-                  <span style={{ color: '#67e8f9' }}>↓</span> {fmtRate(snap.network.downKBps)}
-                </span>
+                <button onClick={() => onNavigate('space-lens')} style={{
+                  background: 'none', border: 'none', padding: 0,
+                  color: healthColor, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                }}>Free Up</button>
               </div>
             )}
           </div>
-        </div>
-        <button style={{
-          background: 'none', border: 'none', padding: 0,
-          color: '#a78bfa', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-        }}>
-          Test Speed
-        </button>
-      </Widget>
 
-      {/* Connected devices */}
-      {snap && snap.connectedDevices.length > 0 && (
-        <Widget>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.70)', marginBottom: 6 }}>Connected Devices</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {snap.connectedDevices.map(dev => (
-              <div key={dev.path} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <rect x="1" y="4" width="16" height="11" rx="2" fill="rgba(130,160,220,0.40)" stroke="rgba(160,190,255,0.40)" strokeWidth="1"/>
-                  <rect x="1" y="11" width="16" height="4" rx="1" fill="rgba(100,130,190,0.30)"/>
-                  <circle cx="3.5" cy="13" r="1.1" fill="rgba(160,190,255,0.65)"/>
-                </svg>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{dev.name}</span>
-                {dev.path && <EjectButton path={dev.path} />}
-              </div>
-            ))}
-          </div>
-        </Widget>
-      )}
-
-      {/* Today's Recommendation */}
-      {rec && (
-        <Widget style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.18)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: 8 }}>
-            Today's Recommendation
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-              background: `${theme.accent}22`, border: `1px solid ${theme.accent}33`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-            }}>
-              {rec.icon}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{rec.title}</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5, marginBottom: 12 }}>{rec.body}</div>
-              <button onClick={rec.onAction} style={{
-                padding: '8px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700,
-                background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}AA)`,
-                border: 'none', color: 'white', cursor: 'pointer',
-                boxShadow: `0 4px 16px ${theme.accent}44`,
+          {/* FDA badge (compact) */}
+          {fdaGranted !== null && (
+            <div onClick={fdaGranted ? undefined : () => window.electron.openFDASettings()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8, cursor: fdaGranted ? 'default' : 'pointer',
+                background: fdaGranted ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)',
+                border: `1px solid ${fdaGranted ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
               }}>
-                {rec.action}
-              </button>
+              <div style={{ width: 6, height: 6, borderRadius: '50%',
+                background: fdaGranted ? '#22c55e' : '#ef4444',
+                boxShadow: `0 0 5px ${fdaGranted ? '#22c55e' : '#ef4444'}` }}/>
+              <span style={{ fontSize: 12, color: fdaGranted ? '#86efac' : '#fca5a5', fontWeight: 600 }}>
+                Full Disk Access {fdaGranted ? 'Granted' : '-- Tap to Enable'}
+              </span>
             </div>
+          )}
+        </div>
+
+        {/* RIGHT column: Stats + Metrics stacked */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Total freed stat card */}
+          <div style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 20, padding: '20px 24px',
+            display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', overflow: 'hidden',
+          }}>
+            <div style={{ position: 'absolute', bottom: -20, right: -20, width: 120, height: 120,
+              borderRadius: '50%', background: 'rgba(34,211,238,0.08)', pointerEvents: 'none' }}/>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Local Storage Cleaned
+            </span>
+            <div>
+              <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                {totalFreed > 0 ? fmtBytes(totalFreed) : '--'}
+              </div>
+              <div style={{ fontSize: 12, color: '#22c55e', marginTop: 4 }}>
+                {totalFreed > 0 ? 'lifetime total freed' : 'run a scan to start'}
+              </div>
+            </div>
+            <button onClick={() => onNavigate('junk')} style={{
+              alignSelf: 'flex-start', padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}99)`,
+              border: 'none', color: 'white', cursor: 'pointer',
+              boxShadow: `0 4px 16px ${theme.accent}33`, marginTop: 4,
+            }}>
+              Run Cleanup
+            </button>
           </div>
-        </Widget>
+
+          {/* Live metrics card */}
+          <div style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 20, padding: '20px 24px',
+            display: 'flex', flexDirection: 'column', gap: 14, flex: 1,
+          }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Live Metrics
+            </span>
+            {snap ? (
+              <>
+                <MetricRow label="Memory Pressure"
+                  value={`${snap.memory.pressurePercent}%`}
+                  pct={snap.memory.pressurePercent} warn={60} danger={80} />
+                <MetricRow label="CPU Load"
+                  value={`${snap.cpu.loadPercent}%`}
+                  pct={snap.cpu.loadPercent} warn={60} danger={80} />
+                <MetricRow label="Battery"
+                  value={`${snap.battery.percent}%`}
+                  sub={snap.battery.fullyCharged ? 'Fully charged' : snap.battery.charging ? 'Charging' : 'On battery'}
+                  pct={snap.battery.percent} warn={20} danger={10} />
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)' }}/>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.50)', fontWeight: 500, marginBottom: 3 }}>
+                      {snap.network.ssid || 'Wi-Fi'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <span style={{ fontSize: 12 }}>
+                        <span style={{ color: '#86efac' }}>↑</span> {fmtRate(snap.network.upKBps)}
+                      </span>
+                      <span style={{ fontSize: 12 }}>
+                        <span style={{ color: '#67e8f9' }}>↓</span> {fmtRate(snap.network.downKBps)}
+                      </span>
+                    </div>
+                  </div>
+                  {snap.connectedDevices.length > 0 && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 3 }}>External</div>
+                      {snap.connectedDevices.slice(0, 2).map(d => (
+                        <div key={d.path} style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>{d.name}</div>
+                      ))}
+                      {snap.connectedDevices.length > 2 && (
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>+{snap.connectedDevices.length - 2} more</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{ color: 'rgba(255,255,255,0.30)', fontSize: 13 }}>Loading...</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Recommendation card */}
+      {rec && (
+        <div style={{
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.10)',
+          borderRadius: 20, padding: '16px 24px',
+          display: 'flex', alignItems: 'center', gap: 16,
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 14, flexShrink: 0,
+            background: `${rec.color}20`, border: `1px solid ${rec.color}30`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+          }}>
+            {rec.icon}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{rec.title}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.50)', lineHeight: 1.5 }}>{rec.body}</div>
+          </div>
+          <button onClick={rec.onAction} style={{
+            flexShrink: 0, padding: '8px 20px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+            background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}99)`,
+            border: 'none', color: 'white', cursor: 'pointer',
+            boxShadow: `0 4px 16px ${theme.accent}33`,
+          }}>
+            {rec.action}
+          </button>
+        </div>
       )}
     </div>
   )

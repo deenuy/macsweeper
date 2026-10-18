@@ -178,7 +178,10 @@ function calcHealth(
   return 'Excellent'
 }
 
-export function getSystemSnapshot(): SystemSnapshot {
+let cachedSnapshot: SystemSnapshot | null = null
+let cacheTime = 0
+
+function buildSnapshot(): SystemSnapshot {
   const disk = getDiskInfo()
   const memory = getMemoryInfo()
   const battery = getBatteryInfo()
@@ -187,4 +190,22 @@ export function getSystemSnapshot(): SystemSnapshot {
   const connectedDevices = getConnectedDevices()
   const macModel = getMacModel()
   return { disk, memory, battery, cpu, network, connectedDevices, macModel, healthScore: calcHealth(disk, memory, cpu) }
+}
+
+export function getSystemSnapshot(): SystemSnapshot {
+  if (cachedSnapshot && Date.now() - cacheTime < 3500) return cachedSnapshot
+  cachedSnapshot = buildSnapshot()
+  cacheTime = Date.now()
+  return cachedSnapshot
+}
+
+// Called once on app ready: pre-warms cache before the UI opens,
+// then keeps refreshing in the background so IPC calls are instant.
+export function startSnapshotRefresh(): void {
+  cachedSnapshot = buildSnapshot()
+  cacheTime = Date.now()
+  setInterval(() => {
+    cachedSnapshot = buildSnapshot()
+    cacheTime = Date.now()
+  }, 4000)
 }
