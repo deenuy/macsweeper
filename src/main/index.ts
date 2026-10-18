@@ -140,7 +140,15 @@ app.whenReady().then(() => {
   setupAutoUpdater(win)
 
   app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    const windows = BrowserWindow.getAllWindows()
+    if (windows.length === 0) {
+      createWindow()
+    } else {
+      const w = windows[0]
+      if (w.isMinimized()) w.restore()
+      w.show()
+      w.focus()
+    }
   })
 })
 

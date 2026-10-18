@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useTilt } from '../hooks/useTilt'
 import type { DiskStats, ScanResult } from '../../../shared/types'
 import type { Page, PageTheme } from '../App'
 import HeroScanScreen from './ui/HeroScanScreen'
@@ -29,12 +30,17 @@ function CheckIcon({ size = 16 }: { size?: number }) {
 // ─── Blob sphere hero (shared aesthetic with Space Lens) ──────────────────────
 
 function HeroMacIcon({ accent, scanning }: { accent: string; scanning: boolean }) {
+  const { onMouseMove, onMouseLeave, tiltTransform, tiltTransition } = useTilt(38)
   return (
-    <div style={{
-      position: 'relative', width: 300, height: 300,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      animation: 'float 4s ease-in-out infinite',
-    }}>
+    <div
+      style={{
+        position: 'relative', width: 300, height: 300,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        animation: 'float 4s ease-in-out infinite',
+      }}
+      onMouseMove={onMouseMove as React.MouseEventHandler<HTMLDivElement>}
+      onMouseLeave={onMouseLeave as React.MouseEventHandler<HTMLDivElement>}
+    >
       {/* Ambient glow */}
       <div style={{
         position: 'absolute', inset: 0, borderRadius: '50%',
@@ -42,7 +48,7 @@ function HeroMacIcon({ accent, scanning }: { accent: string; scanning: boolean }
         filter: 'blur(36px)',
       }} />
 
-      {/* Blob sphere */}
+      {/* Blob sphere with 3D tilt */}
       <div style={{
         width: 240, height: 240,
         borderRadius: '55% 45% 50% 50% / 48% 52% 48% 52%',
@@ -51,6 +57,8 @@ function HeroMacIcon({ accent, scanning }: { accent: string; scanning: boolean }
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         position: 'relative', overflow: 'hidden',
         animation: 'blob-morph 6s ease-in-out infinite',
+        transform: tiltTransform,
+        transition: tiltTransition,
       }}>
         {/* Specular highlight */}
         <div style={{

@@ -51,6 +51,17 @@ export interface DiskStats {
   volumeName?: string
 }
 
+export interface SystemSnapshot {
+  disk: { freeBytes: number; totalBytes: number; usedBytes: number }
+  memory: { pressurePercent: number; totalBytes: number; usedBytes: number; freeBytes: number }
+  battery: { percent: number; charging: boolean; fullyCharged: boolean; hasBattery: boolean }
+  cpu: { loadPercent: number }
+  network: { upKBps: number; downKBps: number; ssid: string }
+  connectedDevices: Array<{ name: string; type: 'disk' | 'phone'; info: string; path?: string }>
+  healthScore: 'Excellent' | 'Good' | 'Fair' | 'Poor'
+  macModel: string
+}
+
 export interface VolumeInfo {
   name: string
   path: string

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
-import Dashboard from './components/Dashboard'
+import Home from './components/Home'
 import JunkCleaner from './components/JunkCleaner'
 import DuplicateFinder from './components/DuplicateFinder'
 import SpaceLens from './components/SpaceLens'
@@ -72,7 +72,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case 'dashboard':    return <Dashboard diskStats={diskStats} onNavigate={setPage} theme={theme} />
+      case 'dashboard':    return <Home onNavigate={setPage} theme={theme} />
       case 'junk':         return <JunkCleaner theme={theme} />
       case 'duplicates':   return <DuplicateFinder theme={theme} />
       case 'space-lens':   return <SpaceLens />

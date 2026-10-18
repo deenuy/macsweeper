@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useTilt } from '../hooks/useTilt'
 import type { TreeNode, FileMeta, DiskStats, VolumeInfo } from '../../../shared/types'
 import HeroScanScreen from './ui/HeroScanScreen'
 
@@ -489,7 +490,7 @@ function SpaceLensHero({ onScan }: { onScan: (path: string) => void }) {
   const [volumes, setVolumes] = useState<VolumeInfo[]>([])
   const [selectedPath, setSelectedPath] = useState<string>('/')
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [tilt, setTilt] = useState({ x: 0, y: 0 })
+  const { onMouseMove: tiltMove, onMouseLeave: tiltLeave, tiltTransform, tiltTransition } = useTilt(38)
 
   useEffect(() => {
     window.electron.getVolumes().then(vols => {
@@ -497,13 +498,6 @@ function SpaceLensHero({ onScan }: { onScan: (path: string) => void }) {
       if (vols.length > 0) setSelectedPath(vols[0].path)
     }).catch(() => setSelectedPath(window.electron.homeDir))
   }, [])
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const dx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2)
-    const dy = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2)
-    setTilt({ x: dy * -20, y: dx * 20 })
-  }
 
   const handleChooseFolder = async () => {
     const path = await window.electron.pickFolder()
@@ -519,8 +513,8 @@ function SpaceLensHero({ onScan }: { onScan: (path: string) => void }) {
       <div style={{ flex: '0 0 50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div
           style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'float 4s ease-in-out infinite' }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setTilt({ x: 0, y: 0 })}
+          onMouseMove={tiltMove as React.MouseEventHandler<HTMLDivElement>}
+          onMouseLeave={tiltLeave as React.MouseEventHandler<HTMLDivElement>}
         >
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `radial-gradient(ellipse, ${ACCENT}28 0%, transparent 70%)`, filter: 'blur(28px)' }}/>
           <div style={{
@@ -531,8 +525,8 @@ function SpaceLensHero({ onScan }: { onScan: (path: string) => void }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             position: 'relative', overflow: 'hidden',
             animation: 'blob-morph 6s ease-in-out infinite',
-            transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-            transition: tilt.x === 0 && tilt.y === 0 ? 'transform 0.6s ease' : 'transform 0.08s linear',
+            transform: tiltTransform,
+            transition: tiltTransition,
           }}>
             <div style={{ position: 'absolute', top: '8%', left: '14%', width: '46%', height: '30%', borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(240,220,255,0.40) 0%, transparent 80%)' }}/>
             <div style={{ position: 'absolute', bottom: '12%', right: '10%', width: '28%', height: '18%', borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(100,60,200,0.50) 0%, transparent 80%)', filter: 'blur(6px)' }}/>

@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
 import { hasFullDiskAccess } from './permissions'
+import { getSystemSnapshot } from './system-stats'
 import {
   startGmailAuth, getConnectedAccounts, disconnectAccount,
   scanEmailsByRules, deleteEmails, getCredentialsPath, hasCredentials
@@ -97,6 +98,11 @@ function getDiskStats(): DiskStats {
 export function registerIpcHandlers(): void {
   ipcMain.handle('disk:stats', async () => getDiskStats())
   ipcMain.handle('disk:volumes', async () => getVolumes())
+  ipcMain.handle('system:snapshot', async () => getSystemSnapshot())
+  ipcMain.handle('disk:eject', async (_, volPath: string) => {
+    const { execSync } = require('child_process') as typeof import('child_process')
+    execSync(`diskutil eject "${volPath.replace(/"/g, '\\"')}"`, { timeout: 10000 })
+  })
 
   ipcMain.handle('scan:category', async (_, category: string) => {
     const win = getFocusedWindow()
