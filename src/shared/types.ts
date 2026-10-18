@@ -51,6 +51,15 @@ export interface DiskStats {
   volumeName?: string
 }
 
+export interface VolumeInfo {
+  name: string
+  path: string
+  totalBytes: number
+  usedBytes: number
+  freeBytes: number
+  isNetwork: boolean
+}
+
 export interface ScanProgress {
   category: ScanCategory
   found: number

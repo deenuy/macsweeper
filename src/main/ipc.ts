@@ -28,7 +28,49 @@ import { recordCleanup, beginScanSession, completeScanSession, saveScanFindings,
          getCleanupHistory, getTotalFreed, addIgnorePath, removeIgnorePath, getIgnoredPaths,
          isSpaceTreeFresh, insertSpaceTreeBatch, querySpaceChildren, clearSpaceTree, invalidateSpacePaths } from './db'
 import { moveToTrash } from './cleaner'
-import type { FileItem, DiskStats } from '../shared/types'
+import type { FileItem, DiskStats, VolumeInfo } from '../shared/types'
+
+function getVolumes(): VolumeInfo[] {
+  try {
+    const { execSync } = require('child_process') as typeof import('child_process')
+    const fsmod = require('fs') as typeof import('fs')
+
+    const dfLine = (path: string) => {
+      try {
+        const out = execSync(`df -k "${path.replace(/"/g, '\\"')}"`, { encoding: 'utf8' })
+        const lines = out.trim().split('\n')
+        if (lines.length < 2) return null
+        const m = lines[1].trim().match(/^(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+\d+%\s+(.+)$/)
+        if (!m) return null
+        return { device: m[1], total: parseInt(m[2]) * 1024, used: parseInt(m[3]) * 1024, free: parseInt(m[4]) * 1024 }
+      } catch { return null }
+    }
+
+    const root = dfLine('/')
+    const volumes: VolumeInfo[] = [{
+      name: 'Macintosh HD', path: '/',
+      totalBytes: root?.total ?? 0, usedBytes: root?.used ?? 0, freeBytes: root?.free ?? 0,
+      isNetwork: false,
+    }]
+
+    try {
+      const entries = fsmod.readdirSync('/Volumes')
+      for (const entry of entries) {
+        if (entry.startsWith('.')) continue
+        const volPath = `/Volumes/${entry}`
+        const info = dfLine(volPath)
+        if (!info) continue
+        if (root && info.device === root.device) continue
+        const isNetwork = info.device.startsWith('//') || info.device.includes(':/')
+        volumes.push({ name: entry, path: volPath, totalBytes: info.total, usedBytes: info.used, freeBytes: info.free, isNetwork })
+      }
+    } catch { /* /Volumes unreadable */ }
+
+    return volumes
+  } catch {
+    return [{ name: 'Macintosh HD', path: '/', totalBytes: 0, usedBytes: 0, freeBytes: 0, isNetwork: false }]
+  }
+}
 
 function getFocusedWindow(): BrowserWindow | null {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
@@ -53,9 +95,8 @@ function getDiskStats(): DiskStats {
 }
 
 export function registerIpcHandlers(): void {
-  ipcMain.handle('disk:stats', async () => {
-    return getDiskStats()
-  })
+  ipcMain.handle('disk:stats', async () => getDiskStats())
+  ipcMain.handle('disk:volumes', async () => getVolumes())
 
   ipcMain.handle('scan:category', async (_, category: string) => {
     const win = getFocusedWindow()

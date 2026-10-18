@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import os from 'os'
-import type { FileItem, DiskStats, ScanProgress, TreeNode, FileMeta } from '../shared/types'
+import type { FileItem, DiskStats, ScanProgress, TreeNode, FileMeta, VolumeInfo } from '../shared/types'
 
 const electronAPI = {
   getDiskStats: (): Promise<DiskStats> => ipcRenderer.invoke('disk:stats'),
+  getVolumes: (): Promise<VolumeInfo[]> => ipcRenderer.invoke('disk:volumes'),
 
   scanCategory: (category: string): Promise<FileItem[]> =>
     ipcRenderer.invoke('scan:category', category),

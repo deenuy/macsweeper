@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import type { TreeNode, FileMeta, DiskStats } from '../../../shared/types'
+import type { TreeNode, FileMeta, DiskStats, VolumeInfo } from '../../../shared/types'
 import HeroScanScreen from './ui/HeroScanScreen'
 
 const ACCENT = '#9B5CE8'
@@ -465,40 +465,172 @@ function PropertiesPanel({ node, meta, onTrash }: { node: TreeNode | null; meta:
 
 // ─── Hero landing ─────────────────────────────────────────────────────────────
 
-function SpaceLensHero({ onScan }: { onScan: () => void }) {
+function DriveIcon({ isNetwork = false, size = 16 }: { isNetwork?: boolean; size?: number }) {
+  if (isNetwork) return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="10" width="14" height="5" rx="1.5" fill="rgba(155,92,232,0.5)" stroke="rgba(180,140,255,0.5)" strokeWidth="1"/>
+      <circle cx="13" cy="12.5" r="1" fill="rgba(180,140,255,0.9)"/>
+      <path d="M4 10V7M8 10V5M12 10V7" stroke="rgba(155,92,232,0.7)" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  )
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="4" width="14" height="9" rx="2" fill="rgba(100,120,200,0.45)" stroke="rgba(150,170,240,0.45)" strokeWidth="1"/>
+      <rect x="1" y="9" width="14" height="4" rx="1" fill="rgba(80,100,180,0.35)"/>
+      <circle cx="3.5" cy="11.5" r="1" fill="rgba(150,170,240,0.7)"/>
+      <circle cx="12.5" cy="11.5" r="0.75" fill="rgba(150,170,240,0.5)"/>
+      <rect x="3" y="6" width="6" height="1.5" rx="0.75" fill="rgba(200,210,255,0.25)"/>
+    </svg>
+  )
+}
+
+function SpaceLensHero({ onScan }: { onScan: (path: string) => void }) {
   const [scanning, setScanning] = useState(false)
+  const [volumes, setVolumes] = useState<VolumeInfo[]>([])
+  const [selectedPath, setSelectedPath] = useState<string>('/')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [tilt, setTilt] = useState({ x: 0, y: 0 })
+
+  useEffect(() => {
+    window.electron.getVolumes().then(vols => {
+      setVolumes(vols)
+      if (vols.length > 0) setSelectedPath(vols[0].path)
+    }).catch(() => setSelectedPath(window.electron.homeDir))
+  }, [])
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const dx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2)
+    const dy = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2)
+    setTilt({ x: dy * -20, y: dx * 20 })
+  }
+
+  const handleChooseFolder = async () => {
+    const path = await window.electron.pickFolder()
+    if (path) { setSelectedPath(path); setDropdownOpen(false) }
+  }
+
+  const selectedVol = volumes.find(v => v.path === selectedPath)
+  const selectedName = selectedVol?.name ?? (selectedPath ? selectedPath.split('/').pop() || selectedPath : 'Choose location')
+
   return (
     <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>
+      {/* Left: 3D interactive sphere */}
       <div style={{ flex: '0 0 50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'float 4s ease-in-out infinite' }}>
+        <div
+          style={{ position: 'relative', width: 300, height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'float 4s ease-in-out infinite' }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setTilt({ x: 0, y: 0 })}
+        >
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `radial-gradient(ellipse, ${ACCENT}28 0%, transparent 70%)`, filter: 'blur(28px)' }}/>
-          <div style={{ width: 240, height: 240, borderRadius: '55% 45% 50% 50% / 48% 52% 48% 52%', background: 'radial-gradient(ellipse at 38% 30%, rgba(160,120,255,0.92) 0%, rgba(100,70,220,0.88) 35%, rgba(40,20,130,0.94) 70%, rgba(10,4,50,0.96) 100%)', boxShadow: `0 30px 80px ${ACCENT}55, 0 0 0 1.5px rgba(180,140,255,0.18) inset`, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', animation: 'blob-morph 6s ease-in-out infinite' }}>
-            <div style={{ position: 'absolute', top: '10%', left: '16%', width: '42%', height: '28%', borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(220,200,255,0.35) 0%, transparent 80%)' }}/>
-            <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{ position: 'relative', zIndex: 1, filter: 'drop-shadow(0 6px 20px rgba(0,0,80,0.5))' }}>
-              <circle cx="42" cy="42" r="30" stroke="rgba(255,255,255,0.85)" strokeWidth="6" fill="none"/>
-              <circle cx="42" cy="42" r="16" stroke="rgba(255,255,255,0.50)" strokeWidth="4" fill="rgba(255,255,255,0.08)"/>
-              <line x1="66" y1="66" x2="88" y2="88" stroke="rgba(255,255,255,0.80)" strokeWidth="7" strokeLinecap="round"/>
+          <div style={{
+            width: 240, height: 240,
+            borderRadius: '55% 45% 50% 50% / 48% 52% 48% 52%',
+            background: 'radial-gradient(ellipse at 38% 30%, rgba(170,130,255,0.94) 0%, rgba(100,70,220,0.90) 35%, rgba(40,20,130,0.95) 70%, rgba(10,4,50,0.97) 100%)',
+            boxShadow: `0 30px 80px ${ACCENT}66, 0 0 0 1.5px rgba(180,140,255,0.22) inset, 0 -8px 32px rgba(120,80,220,0.35) inset`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            position: 'relative', overflow: 'hidden',
+            animation: 'blob-morph 6s ease-in-out infinite',
+            transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
+            transition: tilt.x === 0 && tilt.y === 0 ? 'transform 0.6s ease' : 'transform 0.08s linear',
+          }}>
+            <div style={{ position: 'absolute', top: '8%', left: '14%', width: '46%', height: '30%', borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(240,220,255,0.40) 0%, transparent 80%)' }}/>
+            <div style={{ position: 'absolute', bottom: '12%', right: '10%', width: '28%', height: '18%', borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(100,60,200,0.50) 0%, transparent 80%)', filter: 'blur(6px)' }}/>
+            <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{ position: 'relative', zIndex: 1, filter: 'drop-shadow(0 8px 24px rgba(0,0,80,0.6))' }}>
+              <circle cx="42" cy="42" r="30" stroke="rgba(255,255,255,0.88)" strokeWidth="5.5" fill="none"/>
+              <circle cx="42" cy="42" r="16" stroke="rgba(255,255,255,0.52)" strokeWidth="4" fill="rgba(255,255,255,0.09)"/>
+              <circle cx="42" cy="42" r="6" fill="rgba(255,255,255,0.25)"/>
+              <line x1="66" y1="66" x2="88" y2="88" stroke="rgba(255,255,255,0.82)" strokeWidth="7" strokeLinecap="round"/>
             </svg>
           </div>
+          <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', width: 160, height: 20, background: 'radial-gradient(ellipse, rgba(0,0,0,0.28) 0%, transparent 70%)', filter: 'blur(8px)' }}/>
         </div>
       </div>
+
+      {/* Right: title + features + volume selector + scan */}
       <div style={{ flex: '0 0 50%', paddingRight: 16 }}>
         <h1 style={{ fontSize: 42, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 10 }}>Space Lens</h1>
-        <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5, marginBottom: 32, maxWidth: 360 }}>Visualize what's taking up the most disk space and clean up quickly.</p>
-        <div style={{ marginBottom: 36 }}>
+        <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5, marginBottom: 28, maxWidth: 360 }}>
+          Visualize what's taking up the most disk space and clean up quickly.
+        </p>
+
+        <div style={{ marginBottom: 28 }}>
           {[
             { label: 'Visual Storage Map', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg> },
-            { label: '1 GB+ items shown individually', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></svg> },
-            { label: 'Navigate & remove large files', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h8"/></svg> },
+            { label: 'Hidden Files Uncovered', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></svg> },
+            { label: 'Large Folders Overview', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h12M2 8h12M2 12h8"/></svg> },
           ].map(f => (
-            <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: `${ACCENT}28`, border: `1px solid ${ACCENT}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(200,170,255,0.9)', flexShrink: 0 }}>{f.icon}</div>
-              <span style={{ fontSize: 15, fontWeight: 500 }}>{f.label}</span>
+            <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${ACCENT}28`, border: `1px solid ${ACCENT}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(200,170,255,0.9)', flexShrink: 0 }}>{f.icon}</div>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{f.label}</span>
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
-          <button onClick={async () => { setScanning(true); await onScan() }} disabled={scanning}
+
+        {/* Volume / folder selector */}
+        <div style={{ marginBottom: 24, position: 'relative' }}>
+          <button
+            onClick={() => setDropdownOpen(v => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', background: 'rgba(0,0,0,0.28)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 12, cursor: 'pointer', color: 'white' }}
+          >
+            <DriveIcon isNetwork={selectedVol?.isNetwork} size={18} />
+            <span style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 600 }}>{selectedName}</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+              <path d="M2 4l4 4 4-4"/>
+            </svg>
+          </button>
+
+          {dropdownOpen && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setDropdownOpen(false)}/>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, marginTop: 4, background: 'rgba(22,12,52,0.97)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,30,0.75)' }}>
+                {volumes.map(vol => (
+                  <div key={vol.path}
+                    onClick={() => { setSelectedPath(vol.path); setDropdownOpen(false) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', transition: 'background 0.1s' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = `${ACCENT}22`}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                  >
+                    <div style={{ width: 16, flexShrink: 0 }}>
+                      {vol.path === selectedPath && (
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke={ACCENT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M2 6l3 3 5-5"/>
+                        </svg>
+                      )}
+                    </div>
+                    <DriveIcon isNetwork={vol.isNetwork} size={18} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.90)' }}>{vol.name}</div>
+                      {vol.totalBytes > 0 && (
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', marginTop: 1 }}>
+                          {fmtBytes(vol.freeBytes)} free of {fmtBytes(vol.totalBytes)}
+                        </div>
+                      )}
+                    </div>
+                    {vol.isNetwork && (
+                      <span style={{ fontSize: 10, color: `${ACCENT}CC`, padding: '2px 6px', border: `1px solid ${ACCENT}44`, borderRadius: 4, flexShrink: 0 }}>Network</span>
+                    )}
+                  </div>
+                ))}
+                <div
+                  onClick={handleChooseFolder}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,0.08)', transition: 'background 0.1s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                >
+                  <div style={{ width: 16 }}/>
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <path d="M2,5.5 L2,3 Q2,1.5 3.5,1.5 L7,1.5 Q7.8,1.5 8.2,2.3 L9,3.5 L15.5,3.5 Q17,3.5 17,5 L17,14 Q17,15.5 15.5,15.5 L2.5,15.5 Q2,15.5 2,14 Z" fill="rgba(155,92,232,0.40)" stroke="rgba(180,140,255,0.40)" strokeWidth="1"/>
+                  </svg>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.75)' }}>Choose folder…</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button onClick={async () => { setScanning(true); await onScan(selectedPath) }} disabled={scanning}
             className="scan-orb" data-scanning={scanning}>
             {scanning
               ? <svg width="22" height="22" viewBox="0 0 22 22" fill="none" className="animate-spin"><circle cx="11" cy="11" r="7.5" stroke="rgba(255,255,255,0.22)" strokeWidth="2.5"/><path d="M11 3.5a7.5 7.5 0 0 1 7.5 7.5" stroke="white" strokeWidth="2.5" strokeLinecap="round"/></svg>
@@ -535,6 +667,7 @@ export default function SpaceLens() {
   const [removeResult,  setRemoveResult]  = useState<RemoveResult | null>(null)
   const [contextMenu,   setContextMenu]   = useState<ContextMenuState | null>(null)
   const [scanFile,      setScanFile]      = useState('')
+  const [scanRoot,      setScanRoot]      = useState('/')
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
   // Smart grouping: items ≥1 GB get individual bubbles, rest → "Other items"
@@ -580,6 +713,7 @@ export default function SpaceLens() {
       if (!fresh) return
       doQuery(home).then(nodes => {
         setCurrentPath(home)
+        setScanRoot(home)
         setNavStack([])
         setChecked(new Set())
         setSelected(null)
@@ -588,18 +722,18 @@ export default function SpaceLens() {
     }).catch(() => {})
   }, [doQuery])
 
-  const handleInitialScan = async () => {
-    const home = window.electron.homeDir
+  const handleInitialScan = async (scanPath?: string) => {
+    const root = scanPath ?? window.electron.homeDir
     setScanning(true)
-    setScanFile(home)
+    setScanFile(root)
+    setScanRoot(root)
     try {
-      // Check freshness first — skip the full walk if index is recent
-      const fresh = await window.electron.spaceIsFresh(home)
+      const fresh = await window.electron.spaceIsFresh(root)
       if (!fresh) {
-        await window.electron.spaceIndex(home)
+        await window.electron.spaceIndex(root)
       }
-      const nodes = await doQuery(home)
-      setCurrentPath(home); setNavStack([])
+      const nodes = await doQuery(root)
+      setCurrentPath(root); setNavStack([])
       setChecked(new Set()); setSelected(null)
       setCurrentNodes(nodes)
     } finally {
@@ -630,7 +764,7 @@ export default function SpaceLens() {
 
   const handleStartOver = () => {
     setCurrentPath(null); setCurrentNodes([]); setNavStack([])
-    setChecked(new Set()); setSelected(null); setTooltip(null)
+    setChecked(new Set()); setSelected(null); setTooltip(null); setScanRoot('/')
   }
 
   const handleCheck = useCallback((path: string, on: boolean) => {
@@ -749,8 +883,15 @@ export default function SpaceLens() {
   const folderName = currentPath?.split('/').pop() || 'Volume'
   const diskPct = diskStats ? (diskStats.usedBytes / diskStats.totalBytes) * 100 : 0
   const volName = diskStats?.volumeName || 'Macintosh HD'
+  const rootLabel = (() => {
+    if (!scanRoot || scanRoot === '/') return 'Macintosh HD'
+    const volMatch = scanRoot.match(/^\/Volumes\/([^/]+)/)
+    if (volMatch) return volMatch[1]
+    if (scanRoot === window.electron.homeDir) return '~'
+    return scanRoot.split('/').filter(Boolean).pop() || 'Volume'
+  })()
   const crumbSegments = [
-    { label: 'Macintosh HD' },
+    { label: rootLabel },
     ...navStack.map(e => ({ label: e.label })),
     { label: folderName },
   ]
