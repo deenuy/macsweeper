@@ -23,164 +23,200 @@ const HEALTH: Record<string, { color: string; glow: string }> = {
 
 function MacHero({ score }: { score: string }) {
   const { color, glow } = HEALTH[score] ?? HEALTH.Excellent
-  const { tilt, isResting, onMouseMove, onMouseLeave, tiltTransition } = useTilt(34)
-  const tiltTransform = isResting
-    ? 'perspective(420px) rotateX(0deg) rotateY(0deg) translateZ(0px)'
-    : `perspective(420px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateZ(14px)`
+  const { tilt, isResting, onMouseMove, onMouseLeave, tiltTransition } = useTilt(10)
+
+  // perspective is a CSS *property* on the parent — not inside transform —
+  // so the child's rotateY actually renders in 3D context.
+  const tiltTransform = `rotateX(${tilt.x * 0.4}deg) rotateY(${tilt.y * 0.4}deg)`
 
   return (
     <>
-      {/* Floating idle animation — pauses during mouse interaction */}
       <style>{`
-        @keyframes macFloat {
-          0%,100% { transform: translateY(0px); }
-          50%      { transform: translateY(-10px); }
+        @keyframes iMacFloat {
+          0%,100% { transform: translateY(0px) rotateY(-4deg); }
+          50%      { transform: translateY(-10px) rotateY(4deg); }
         }
       `}</style>
+      {/* perspective on the parent gives children a real 3D rendering context */}
       <div
         onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
         style={{
           display: 'flex', justifyContent: 'center', alignItems: 'center',
-          transform: tiltTransform, transition: tiltTransition,
-          cursor: 'default', willChange: 'transform',
+          perspective: '1000px',
+          cursor: 'default',
         }}>
-        {/* Inner wrapper carries the float; tilt wraps it so they compose cleanly */}
         <div style={{
-          animation: isResting ? 'macFloat 3.8s ease-in-out infinite' : 'none',
-          filter: `drop-shadow(0 28px 52px ${glow}) drop-shadow(0 10px 24px rgba(0,0,0,0.55))`,
+          transform: isResting ? undefined : tiltTransform,
+          transition: tiltTransition,
+          animation: isResting ? 'iMacFloat 4.2s ease-in-out infinite' : 'none',
+          filter: `drop-shadow(-10px 28px 50px ${glow}) drop-shadow(-3px 10px 20px rgba(0,0,0,0.60))`,
+          willChange: 'transform',
         }}>
-          <svg width="270" height="224" viewBox="0 0 270 224" fill="none">
+          {/*
+            ┌─────────────────────────────────────────────────────────────────┐
+            │  iMAC G3-STYLE: viewed from upper-left                          │
+            │  Depth axis goes upper-right: (+0.48, -0.28) per unit back      │
+            │  LEFT side panel is the near face (correctly facing viewer)      │
+            │                                                                  │
+            │  Key paths:                                                      │
+            │    Left panel:  (8,46)→(8,182)→(80,200)→(80,22)                 │
+            │    Front face:  (80,22)→(242,34)→(242,204)→(80,200)             │
+            │    Top strip:   (80,22)→(242,34)→(246,27)→(84,15)              │
+            │    Stand:       foot below body                                  │
+            └─────────────────────────────────────────────────────────────────┘
+          */}
+          <svg width="275" height="218" viewBox="0 0 275 218" fill="none">
             <defs>
-              {/* ── MATERIAL: purple-glass, lit top-left ── */}
-              <radialGradient id="lidGloss" cx="22%" cy="18%" r="75%">
-                <stop offset="0%"   stopColor="rgba(240,220,255,0.38)"/>
-                <stop offset="45%"  stopColor="rgba(180,150,255,0.14)"/>
-                <stop offset="100%" stopColor="rgba(80,50,160,0.08)"/>
+              {/* LEFT PANEL — richest purple, primary 3D face, lit upper-left */}
+              <radialGradient id="igLeft" cx="30%" cy="20%" r="70%">
+                <stop offset="0%"   stopColor="rgba(198,165,255,0.75)"/>
+                <stop offset="38%"  stopColor="rgba(140,102,238,0.52)"/>
+                <stop offset="100%" stopColor="rgba(48,22,128,0.30)"/>
               </radialGradient>
-              <radialGradient id="baseGloss" cx="20%" cy="20%" r="80%">
-                <stop offset="0%"   stopColor="rgba(220,200,255,0.28)"/>
-                <stop offset="100%" stopColor="rgba(60,30,120,0.10)"/>
-              </radialGradient>
-              {/* Screen */}
-              <radialGradient id="screenBg" cx="50%" cy="55%" r="55%">
-                <stop offset="0%"   stopColor="#0a0d1c"/>
-                <stop offset="100%" stopColor="#020408"/>
-              </radialGradient>
-              {/* Health color blooms from center of screen */}
-              <radialGradient id="screenBloom" cx="50%" cy="50%" r="55%">
-                <stop offset="0%"   stopColor={color} stopOpacity="0.55"/>
-                <stop offset="55%"  stopColor={color} stopOpacity="0.12"/>
-                <stop offset="100%" stopColor={color} stopOpacity="0"/>
-              </radialGradient>
-              {/* Screen also spills a glow BEYOND the bezel onto the lid */}
-              <radialGradient id="lidBloom" cx="50%" cy="57%" r="45%">
-                <stop offset="0%"   stopColor={color} stopOpacity="0.18"/>
-                <stop offset="100%" stopColor={color} stopOpacity="0"/>
-              </radialGradient>
-              {/* Specular dome on lid — the key to 3D glass look */}
-              <radialGradient id="lidSpec" cx="28%" cy="16%" r="60%">
-                <stop offset="0%"   stopColor="rgba(255,255,255,0.52)"/>
-                <stop offset="38%"  stopColor="rgba(255,255,255,0.14)"/>
+              {/* Left panel specular — top-left bright lobe (suggests curved glass) */}
+              <radialGradient id="igLeftSpec" cx="26%" cy="16%" r="48%">
+                <stop offset="0%"   stopColor="rgba(255,255,255,0.50)"/>
+                <stop offset="60%"  stopColor="rgba(255,255,255,0.08)"/>
                 <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
               </radialGradient>
-              {/* Screen glass sheen — top portion */}
-              <linearGradient id="screenSheen" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="rgba(255,255,255,0.10)"/>
-                <stop offset="40%"  stopColor="rgba(255,255,255,0.02)"/>
+              {/* FRONT FACE — lighter glass (slightly more face-on, less saturated) */}
+              <radialGradient id="igFront" cx="16%" cy="13%" r="76%">
+                <stop offset="0%"   stopColor="rgba(228,208,255,0.54)"/>
+                <stop offset="44%"  stopColor="rgba(168,138,248,0.22)"/>
+                <stop offset="100%" stopColor="rgba(68,40,158,0.09)"/>
+              </radialGradient>
+              <radialGradient id="igFrontSpec" cx="18%" cy="10%" r="52%">
+                <stop offset="0%"   stopColor="rgba(255,255,255,0.58)"/>
+                <stop offset="34%"  stopColor="rgba(255,255,255,0.12)"/>
+                <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
+              </radialGradient>
+              {/* Health color spills from screen onto front face */}
+              <radialGradient id="igFrontGlow" cx="53%" cy="53%" r="42%">
+                <stop offset="0%"   stopColor={color} stopOpacity="0.22"/>
+                <stop offset="100%" stopColor={color} stopOpacity="0"/>
+              </radialGradient>
+              {/* TOP STRIP — brightest (lit from above) */}
+              <linearGradient id="igTop" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%"   stopColor="rgba(222,206,255,0.75)"/>
+                <stop offset="100%" stopColor="rgba(148,118,238,0.38)"/>
+              </linearGradient>
+              {/* SCREEN */}
+              <radialGradient id="igScreen" cx="50%" cy="52%" r="56%">
+                <stop offset="0%"   stopColor="#0d1020"/>
+                <stop offset="100%" stopColor="#030508"/>
+              </radialGradient>
+              <radialGradient id="igBloom" cx="50%" cy="50%" r="52%">
+                <stop offset="0%"   stopColor={color} stopOpacity="0.72"/>
+                <stop offset="46%"  stopColor={color} stopOpacity="0.22"/>
+                <stop offset="100%" stopColor={color} stopOpacity="0"/>
+              </radialGradient>
+              <linearGradient id="igSheen" x1="0" y1="0" x2="0.18" y2="1">
+                <stop offset="0%"   stopColor="rgba(255,255,255,0.15)"/>
+                <stop offset="36%"  stopColor="rgba(255,255,255,0.03)"/>
                 <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
               </linearGradient>
-              {/* Hinge gradient */}
-              <linearGradient id="hingeGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="rgba(200,180,255,0.30)"/>
-                <stop offset="100%" stopColor="rgba(60,30,120,0.15)"/>
+              {/* STAND */}
+              <linearGradient id="igStand" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="rgba(168,135,252,0.48)"/>
+                <stop offset="100%" stopColor="rgba(58,32,145,0.22)"/>
               </linearGradient>
-              {/* Glow filters */}
-              <filter id="indicGlow" x="-100%" y="-100%" width="300%" height="300%">
+              <filter id="igGlow" x="-100%" y="-100%" width="300%" height="300%">
                 <feGaussianBlur stdDeviation="5" result="b"/>
                 <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
-              <filter id="softBlur" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="3"/>
+              <filter id="igBlur" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="4"/>
               </filter>
+              <clipPath id="igScreenClip">
+                <polygon points="98,43 232,50 232,189 98,182"/>
+              </clipPath>
             </defs>
 
-            {/* ── GROUND SHADOW ── */}
-            <ellipse cx="135" cy="219" rx="100" ry="7" fill="rgba(0,0,0,0.35)" filter="url(#softBlur)"/>
+            {/* Ground shadow — centred under body */}
+            <ellipse cx="148" cy="215" rx="112" ry="7" fill="rgba(0,0,0,0.42)" filter="url(#igBlur)"/>
 
-            {/* ── BASE / KEYBOARD ── */}
-            {/* Body */}
-            <rect x="6" y="158" width="258" height="50" rx="11" fill="url(#baseGloss)"
-              stroke="rgba(200,180,255,0.22)" strokeWidth="1.2"/>
-            {/* Top-edge bright rim */}
-            <rect x="6" y="158" width="258" height="3" rx="2" fill="rgba(255,255,255,0.48)"/>
-            {/* Left-edge rim */}
-            <rect x="6" y="161" width="2" height="47" rx="1" fill="rgba(255,255,255,0.26)"/>
-            {/* Bottom shadow */}
-            <rect x="14" y="204" width="242" height="3" rx="1.5" fill="rgba(0,0,0,0.22)"/>
-            {/* Keyboard rows */}
-            <rect x="28" y="171" width="214" height="2" rx="1" fill="rgba(255,255,255,0.10)"/>
-            <rect x="28" y="178" width="214" height="2" rx="1" fill="rgba(255,255,255,0.08)"/>
-            <rect x="28" y="185" width="214" height="2" rx="1" fill="rgba(255,255,255,0.06)"/>
-            {/* Trackpad */}
-            <rect x="98" y="169" width="74" height="28" rx="6"
-              fill="rgba(180,150,255,0.09)" stroke="rgba(220,200,255,0.18)" strokeWidth="0.8"/>
-            <rect x="98" y="169" width="74" height="7" rx="3" fill="rgba(255,255,255,0.06)"/>
+            {/* ══ TOP STRIP (facing up, lit from above) ═══════════════════ */}
+            <path d="M 80,22 L 242,34 L 246,27 L 84,15 Z" fill="url(#igTop)"/>
+            <line x1="80" y1="22" x2="242" y2="34" stroke="rgba(255,255,255,0.52)" strokeWidth="1.6"/>
+            <line x1="80" y1="22" x2="84" y2="15"  stroke="rgba(255,255,255,0.36)" strokeWidth="1.2"/>
 
-            {/* ── HINGE ── */}
-            <rect x="18" y="151" width="234" height="9" rx="3.5" fill="url(#hingeGrad)"
-              stroke="rgba(200,180,255,0.18)" strokeWidth="0.6"/>
-            <rect x="18" y="151" width="234" height="2.5" rx="1.5" fill="rgba(255,255,255,0.28)"/>
+            {/* ══ LEFT PANEL (the near side face — key 3D depth cue) ══════ */}
+            {/* Rounded body shape: left edge has curved corners */}
+            <path d="M 80,22
+                     L 16,30 C 8,32 6,40 6,48
+                     L 6,178 C 6,188 10,194 18,196
+                     L 80,200 Z"
+              fill="url(#igLeft)"/>
+            <path d="M 80,22
+                     L 16,30 C 8,32 6,40 6,48
+                     L 6,178 C 6,188 10,194 18,196
+                     L 80,200 Z"
+              fill="url(#igLeftSpec)"/>
+            {/* Diagonal gloss sweep — characteristic iMac G3 reflection */}
+            <path d="M 14,36 L 44,26 L 80,58 L 50,68 Z"
+              fill="rgba(255,255,255,0.13)" style={{ mixBlendMode: 'screen' }}/>
+            {/* Left outer edge highlight */}
+            <path d="M 16,30 C 8,32 6,40 6,48 L 6,165"
+              stroke="rgba(255,255,255,0.44)" strokeWidth="2" fill="none" strokeLinecap="round"/>
+            {/* Top edge of left panel */}
+            <line x1="16" y1="30" x2="80" y2="22" stroke="rgba(255,255,255,0.46)" strokeWidth="1.6"/>
 
-            {/* ── LID — base material ── */}
-            <rect x="12" y="8" width="246" height="145" rx="15" fill="url(#lidGloss)"
-              stroke="rgba(220,200,255,0.28)" strokeWidth="1.5"/>
+            {/* ══ FRONT FACE (screen side) ════════════════════════════════ */}
+            <path d="M 80,22
+                     L 242,34 C 248,35 252,40 252,47
+                     L 252,196 C 252,203 248,207 242,205
+                     L 80,200 Z"
+              fill="url(#igFront)"/>
+            <path d="M 80,22
+                     L 242,34 C 248,35 252,40 252,47
+                     L 252,196 C 252,203 248,207 242,205
+                     L 80,200 Z"
+              fill="url(#igFrontGlow)"/>
+            <path d="M 80,22
+                     L 242,34 C 248,35 252,40 252,47
+                     L 252,196 C 252,203 248,207 242,205
+                     L 80,200 Z"
+              fill="url(#igFrontSpec)"/>
+            {/* Left rim — seam between left panel and front face */}
+            <line x1="80" y1="22" x2="80" y2="200" stroke="rgba(255,255,255,0.32)" strokeWidth="2"/>
+            {/* Bottom seam */}
+            <line x1="84" y1="200" x2="238" y2="205" stroke="rgba(0,0,0,0.20)" strokeWidth="1.8"/>
 
-            {/* Health color bleeds through the lid (from screen behind it) */}
-            <rect x="12" y="8" width="246" height="145" rx="15" fill="url(#lidBloom)"/>
+            {/* ── SCREEN BEZEL ─────────────────────────────────────────── */}
+            <polygon points="92,36 238,44 238,196 92,188" fill="rgba(0,0,0,0.70)"/>
 
-            {/* ── SPECULAR DOME — the hero of the 3D effect ── */}
-            <rect x="12" y="8" width="246" height="145" rx="15" fill="url(#lidSpec)"/>
+            {/* ── SCREEN PANEL ─────────────────────────────────────────── */}
+            <polygon points="98,43 232,50 232,189 98,182" fill="url(#igScreen)"/>
+            <polygon points="98,43 232,50 232,189 98,182" fill="url(#igBloom)"/>
+            <polygon points="98,43 232,50 232,189 98,182" fill="url(#igSheen)"/>
 
-            {/* Top-edge specular streak */}
-            <rect x="12" y="8" width="246" height="4" rx="2.5" fill="rgba(255,255,255,0.60)"/>
-            {/* Left-edge specular streak */}
-            <rect x="12" y="12" width="2.5" height="141" rx="1.5" fill="rgba(255,255,255,0.32)"/>
-
-            {/* ── SCREEN BEZEL ── */}
-            <rect x="21" y="17" width="228" height="130" rx="9" fill="rgba(0,0,0,0.62)"/>
-
-            {/* ── SCREEN PANEL ── */}
-            <rect x="27" y="23" width="216" height="118" rx="5" fill="url(#screenBg)"/>
-
-            {/* Health bloom on screen */}
-            <rect x="27" y="23" width="216" height="118" rx="5" fill="url(#screenBloom)"/>
-
-            {/* Screen glass sheen */}
-            <rect x="27" y="23" width="216" height="60" rx="5" fill="url(#screenSheen)"/>
-
-            {/* ── NOTCH ── */}
-            <rect x="114" y="8" width="42" height="10" rx="5" fill="rgba(0,0,0,0.58)"/>
-            {/* Camera */}
-            <circle cx="135" cy="13" r="3.5" fill="rgba(5,5,15,0.80)"
+            {/* ── CAMERA (top center of front bezel) ───────────────────── */}
+            <circle cx="162" cy="29" r="3.4" fill="rgba(5,5,18,0.88)"
               stroke="rgba(255,255,255,0.08)" strokeWidth="0.5"/>
-            <circle cx="135" cy="13" r="1.8" fill="rgba(30,25,60,0.95)"/>
-            <circle cx="133.8" cy="11.8" r="0.7" fill="rgba(255,255,255,0.40)"/>
+            <circle cx="162" cy="29" r="1.7" fill="rgba(22,16,52,0.95)"/>
+            <circle cx="160.8" cy="27.8" r="0.65" fill="rgba(255,255,255,0.46)"/>
 
-            {/* ── HEALTH INDICATOR ── */}
-            {/* Wide soft bloom behind everything */}
-            <circle cx="135" cy="82" r="38" fill={color} opacity="0.08" filter="url(#softBlur)"/>
-            {/* Outer thin ring */}
-            <circle cx="135" cy="82" r="30" fill="none"
-              stroke={color} strokeWidth="0.7" opacity="0.30"/>
-            {/* Mid ring */}
-            <circle cx="135" cy="82" r="20" fill="none"
-              stroke={color} strokeWidth="1.5" opacity="0.65" filter="url(#indicGlow)"/>
-            {/* Inner fill */}
-            <circle cx="135" cy="82" r="13" fill={color} opacity="0.12"/>
-            {/* Core */}
-            <circle cx="135" cy="82" r="7" fill={color} opacity="0.95" filter="url(#indicGlow)"/>
-            {/* Core specular */}
-            <circle cx="133" cy="80" r="2.5" fill="rgba(255,255,255,0.75)"/>
+            {/* ── HEALTH INDICATOR (clipped to screen panel) ───────────── */}
+            {/* Screen center: x=(98+232)/2=165, y=(43+189)/2=116 */}
+            <g clipPath="url(#igScreenClip)">
+              <circle cx="165" cy="116" r="44" fill={color} opacity="0.09" filter="url(#igBlur)"/>
+              <circle cx="165" cy="116" r="32" fill="none" stroke={color} strokeWidth="0.7" opacity="0.30"/>
+              <circle cx="165" cy="116" r="21" fill="none" stroke={color} strokeWidth="1.5" opacity="0.68" filter="url(#igGlow)"/>
+              <circle cx="165" cy="116" r="13" fill={color} opacity="0.13"/>
+              <circle cx="165" cy="116" r="7"  fill={color} opacity="0.96" filter="url(#igGlow)"/>
+              <circle cx="163.2" cy="114.2" r="2.4" fill="rgba(255,255,255,0.84)"/>
+            </g>
+
+            {/* ══ STAND / FOOT ════════════════════════════════════════════ */}
+            {/* Left side of stand */}
+            <path d="M 80,200 L 106,206 L 102,216 L 80,208 Z"
+              fill="rgba(82,50,182,0.58)"/>
+            {/* Front of stand */}
+            <path d="M 106,206 L 214,212 L 210,220 L 102,216 Z"
+              fill="url(#igStand)"/>
+            {/* Stand top rim */}
+            <line x1="80" y1="200" x2="214" y2="212"
+              stroke="rgba(202,180,255,0.36)" strokeWidth="1.2"/>
           </svg>
         </div>
       </div>
