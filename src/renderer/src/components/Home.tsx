@@ -23,118 +23,168 @@ const HEALTH: Record<string, { color: string; glow: string }> = {
 
 function MacHero({ score }: { score: string }) {
   const { color, glow } = HEALTH[score] ?? HEALTH.Excellent
-  // Expose raw tilt values so we can build a custom transform with tighter perspective + lift
-  const { tilt, isResting, onMouseMove, onMouseLeave, tiltTransition } = useTilt(32)
-  const transform = isResting
-    ? 'perspective(450px) rotateX(0deg) rotateY(0deg) translateZ(0px)'
-    : `perspective(450px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateZ(10px)`
+  const { tilt, isResting, onMouseMove, onMouseLeave, tiltTransition } = useTilt(34)
+  const tiltTransform = isResting
+    ? 'perspective(420px) rotateX(0deg) rotateY(0deg) translateZ(0px)'
+    : `perspective(420px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateZ(14px)`
 
   return (
-    <div
-      onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
-      style={{
-        display: 'flex', justifyContent: 'center', alignItems: 'center',
-        transform, transition: tiltTransition, cursor: 'default', willChange: 'transform',
-        filter: `drop-shadow(0 20px 40px ${glow}) drop-shadow(0 6px 16px rgba(0,0,0,0.45))`,
-      }}>
-      <svg width="260" height="220" viewBox="0 0 260 220" fill="none">
-        <defs>
-          {/* White-glass gradients — lit from top-left */}
-          <linearGradient id="macLid" x1="0" y1="0" x2="0.3" y2="1">
-            <stop offset="0%"   stopColor="rgba(255,255,255,0.22)"/>
-            <stop offset="100%" stopColor="rgba(255,255,255,0.08)"/>
-          </linearGradient>
-          <linearGradient id="macBase" x1="0" y1="0" x2="0.2" y2="1">
-            <stop offset="0%"   stopColor="rgba(255,255,255,0.18)"/>
-            <stop offset="100%" stopColor="rgba(255,255,255,0.07)"/>
-          </linearGradient>
-          <linearGradient id="macScreen" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#070e20"/>
-            <stop offset="100%" stopColor="#020810"/>
-          </linearGradient>
-          <radialGradient id="macScreenGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stopColor={color} stopOpacity="0.25"/>
-            <stop offset="100%" stopColor={color} stopOpacity="0"/>
-          </radialGradient>
-          <filter id="macIndicatorGlow" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="4" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-        </defs>
+    <>
+      {/* Floating idle animation — pauses during mouse interaction */}
+      <style>{`
+        @keyframes macFloat {
+          0%,100% { transform: translateY(0px); }
+          50%      { transform: translateY(-10px); }
+        }
+      `}</style>
+      <div
+        onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
+        style={{
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          transform: tiltTransform, transition: tiltTransition,
+          cursor: 'default', willChange: 'transform',
+        }}>
+        {/* Inner wrapper carries the float; tilt wraps it so they compose cleanly */}
+        <div style={{
+          animation: isResting ? 'macFloat 3.8s ease-in-out infinite' : 'none',
+          filter: `drop-shadow(0 28px 52px ${glow}) drop-shadow(0 10px 24px rgba(0,0,0,0.55))`,
+        }}>
+          <svg width="270" height="224" viewBox="0 0 270 224" fill="none">
+            <defs>
+              {/* ── MATERIAL: purple-glass, lit top-left ── */}
+              <radialGradient id="lidGloss" cx="22%" cy="18%" r="75%">
+                <stop offset="0%"   stopColor="rgba(240,220,255,0.38)"/>
+                <stop offset="45%"  stopColor="rgba(180,150,255,0.14)"/>
+                <stop offset="100%" stopColor="rgba(80,50,160,0.08)"/>
+              </radialGradient>
+              <radialGradient id="baseGloss" cx="20%" cy="20%" r="80%">
+                <stop offset="0%"   stopColor="rgba(220,200,255,0.28)"/>
+                <stop offset="100%" stopColor="rgba(60,30,120,0.10)"/>
+              </radialGradient>
+              {/* Screen */}
+              <radialGradient id="screenBg" cx="50%" cy="55%" r="55%">
+                <stop offset="0%"   stopColor="#0a0d1c"/>
+                <stop offset="100%" stopColor="#020408"/>
+              </radialGradient>
+              {/* Health color blooms from center of screen */}
+              <radialGradient id="screenBloom" cx="50%" cy="50%" r="55%">
+                <stop offset="0%"   stopColor={color} stopOpacity="0.55"/>
+                <stop offset="55%"  stopColor={color} stopOpacity="0.12"/>
+                <stop offset="100%" stopColor={color} stopOpacity="0"/>
+              </radialGradient>
+              {/* Screen also spills a glow BEYOND the bezel onto the lid */}
+              <radialGradient id="lidBloom" cx="50%" cy="57%" r="45%">
+                <stop offset="0%"   stopColor={color} stopOpacity="0.18"/>
+                <stop offset="100%" stopColor={color} stopOpacity="0"/>
+              </radialGradient>
+              {/* Specular dome on lid — the key to 3D glass look */}
+              <radialGradient id="lidSpec" cx="28%" cy="16%" r="60%">
+                <stop offset="0%"   stopColor="rgba(255,255,255,0.52)"/>
+                <stop offset="38%"  stopColor="rgba(255,255,255,0.14)"/>
+                <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
+              </radialGradient>
+              {/* Screen glass sheen — top portion */}
+              <linearGradient id="screenSheen" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="rgba(255,255,255,0.10)"/>
+                <stop offset="40%"  stopColor="rgba(255,255,255,0.02)"/>
+                <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
+              </linearGradient>
+              {/* Hinge gradient */}
+              <linearGradient id="hingeGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="rgba(200,180,255,0.30)"/>
+                <stop offset="100%" stopColor="rgba(60,30,120,0.15)"/>
+              </linearGradient>
+              {/* Glow filters */}
+              <filter id="indicGlow" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="5" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="softBlur" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="3"/>
+              </filter>
+            </defs>
 
-        {/* Ground shadow */}
-        <ellipse cx="130" cy="214" rx="96" ry="6" fill="rgba(0,0,0,0.28)"/>
+            {/* ── GROUND SHADOW ── */}
+            <ellipse cx="135" cy="219" rx="100" ry="7" fill="rgba(0,0,0,0.35)" filter="url(#softBlur)"/>
 
-        {/* ── BASE / KEYBOARD ── */}
-        <rect x="8" y="158" width="244" height="46" rx="10" fill="url(#macBase)"
-          stroke="rgba(255,255,255,0.22)" strokeWidth="1"/>
-        {/* Top-edge highlight (brightest) */}
-        <rect x="8" y="158" width="244" height="2.5" rx="1.5" fill="rgba(255,255,255,0.50)"/>
-        {/* Left-edge highlight */}
-        <rect x="8" y="158" width="2" height="46" rx="1" fill="rgba(255,255,255,0.30)"/>
-        {/* Bottom shadow line */}
-        <rect x="14" y="200" width="232" height="3" rx="1.5" fill="rgba(0,0,0,0.18)"/>
+            {/* ── BASE / KEYBOARD ── */}
+            {/* Body */}
+            <rect x="6" y="158" width="258" height="50" rx="11" fill="url(#baseGloss)"
+              stroke="rgba(200,180,255,0.22)" strokeWidth="1.2"/>
+            {/* Top-edge bright rim */}
+            <rect x="6" y="158" width="258" height="3" rx="2" fill="rgba(255,255,255,0.48)"/>
+            {/* Left-edge rim */}
+            <rect x="6" y="161" width="2" height="47" rx="1" fill="rgba(255,255,255,0.26)"/>
+            {/* Bottom shadow */}
+            <rect x="14" y="204" width="242" height="3" rx="1.5" fill="rgba(0,0,0,0.22)"/>
+            {/* Keyboard rows */}
+            <rect x="28" y="171" width="214" height="2" rx="1" fill="rgba(255,255,255,0.10)"/>
+            <rect x="28" y="178" width="214" height="2" rx="1" fill="rgba(255,255,255,0.08)"/>
+            <rect x="28" y="185" width="214" height="2" rx="1" fill="rgba(255,255,255,0.06)"/>
+            {/* Trackpad */}
+            <rect x="98" y="169" width="74" height="28" rx="6"
+              fill="rgba(180,150,255,0.09)" stroke="rgba(220,200,255,0.18)" strokeWidth="0.8"/>
+            <rect x="98" y="169" width="74" height="7" rx="3" fill="rgba(255,255,255,0.06)"/>
 
-        {/* Keyboard row hints */}
-        <rect x="26" y="170" width="208" height="2.5" rx="1.5" fill="rgba(255,255,255,0.09)"/>
-        <rect x="26" y="177" width="208" height="2.5" rx="1.5" fill="rgba(255,255,255,0.07)"/>
-        <rect x="26" y="184" width="208" height="2.5" rx="1.5" fill="rgba(255,255,255,0.06)"/>
+            {/* ── HINGE ── */}
+            <rect x="18" y="151" width="234" height="9" rx="3.5" fill="url(#hingeGrad)"
+              stroke="rgba(200,180,255,0.18)" strokeWidth="0.6"/>
+            <rect x="18" y="151" width="234" height="2.5" rx="1.5" fill="rgba(255,255,255,0.28)"/>
 
-        {/* Trackpad */}
-        <rect x="96" y="168" width="68" height="26" rx="5"
-          fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.16)" strokeWidth="0.8"/>
-        {/* Trackpad sheen */}
-        <rect x="96" y="168" width="68" height="6" rx="3" fill="rgba(255,255,255,0.06)"/>
+            {/* ── LID — base material ── */}
+            <rect x="12" y="8" width="246" height="145" rx="15" fill="url(#lidGloss)"
+              stroke="rgba(220,200,255,0.28)" strokeWidth="1.5"/>
 
-        {/* ── HINGE ── */}
-        <rect x="16" y="152" width="228" height="8" rx="3"
-          fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.14)" strokeWidth="0.5"/>
-        <rect x="16" y="152" width="228" height="2" rx="1" fill="rgba(255,255,255,0.22)"/>
+            {/* Health color bleeds through the lid (from screen behind it) */}
+            <rect x="12" y="8" width="246" height="145" rx="15" fill="url(#lidBloom)"/>
 
-        {/* ── LID ── */}
-        <rect x="14" y="10" width="232" height="144" rx="14" fill="url(#macLid)"
-          stroke="rgba(255,255,255,0.28)" strokeWidth="1.5"/>
-        {/* Top-edge highlight (primary specular) */}
-        <rect x="14" y="10" width="232" height="3.5" rx="2" fill="rgba(255,255,255,0.55)"/>
-        {/* Left-edge highlight */}
-        <rect x="14" y="10" width="2" height="144" rx="1" fill="rgba(255,255,255,0.30)"/>
-        {/* Inner specular — subtle sheen across lid face */}
-        <rect x="20" y="16" width="220" height="40" rx="4"
-          fill="rgba(255,255,255,0.05)"/>
+            {/* ── SPECULAR DOME — the hero of the 3D effect ── */}
+            <rect x="12" y="8" width="246" height="145" rx="15" fill="url(#lidSpec)"/>
 
-        {/* Screen bezel */}
-        <rect x="22" y="18" width="216" height="128" rx="8" fill="rgba(0,0,0,0.55)"/>
-        {/* Screen panel */}
-        <rect x="27" y="23" width="206" height="118" rx="5" fill="url(#macScreen)"/>
-        {/* Screen health glow overlay */}
-        <rect x="27" y="23" width="206" height="118" rx="5" fill="url(#macScreenGlow)"/>
-        {/* Screen top sheen */}
-        <rect x="27" y="23" width="206" height="20" rx="4"
-          fill="rgba(255,255,255,0.03)"/>
+            {/* Top-edge specular streak */}
+            <rect x="12" y="8" width="246" height="4" rx="2.5" fill="rgba(255,255,255,0.60)"/>
+            {/* Left-edge specular streak */}
+            <rect x="12" y="12" width="2.5" height="141" rx="1.5" fill="rgba(255,255,255,0.32)"/>
 
-        {/* Notch */}
-        <rect x="112" y="10" width="36" height="9" rx="4.5" fill="rgba(0,0,0,0.55)"/>
-        {/* Camera */}
-        <circle cx="130" cy="14.5" r="3.2" fill="rgba(0,0,0,0.7)"
-          stroke="rgba(255,255,255,0.10)" strokeWidth="0.5"/>
-        <circle cx="130" cy="14.5" r="1.6" fill="rgba(60,60,80,0.9)"/>
-        <circle cx="129.2" cy="13.7" r="0.6" fill="rgba(255,255,255,0.35)"/>
+            {/* ── SCREEN BEZEL ── */}
+            <rect x="21" y="17" width="228" height="130" rx="9" fill="rgba(0,0,0,0.62)"/>
 
-        {/* ── HEALTH INDICATOR on screen ── */}
-        {/* Outer pulse ring */}
-        <circle cx="130" cy="82" r="28" fill="none"
-          stroke={color} strokeWidth="0.8" opacity="0.25"/>
-        {/* Main ring */}
-        <circle cx="130" cy="82" r="18" fill="none"
-          stroke={color} strokeWidth="1.8" opacity="0.75" filter="url(#macIndicatorGlow)"/>
-        {/* Inner fill halo */}
-        <circle cx="130" cy="82" r="12" fill={color} opacity="0.10"/>
-        {/* Center dot */}
-        <circle cx="130" cy="82" r="6" fill={color} opacity="0.90" filter="url(#macIndicatorGlow)"/>
-        {/* Specular on center dot */}
-        <circle cx="128.5" cy="80.5" r="2" fill="rgba(255,255,255,0.70)"/>
-      </svg>
-    </div>
+            {/* ── SCREEN PANEL ── */}
+            <rect x="27" y="23" width="216" height="118" rx="5" fill="url(#screenBg)"/>
+
+            {/* Health bloom on screen */}
+            <rect x="27" y="23" width="216" height="118" rx="5" fill="url(#screenBloom)"/>
+
+            {/* Screen glass sheen */}
+            <rect x="27" y="23" width="216" height="60" rx="5" fill="url(#screenSheen)"/>
+
+            {/* ── NOTCH ── */}
+            <rect x="114" y="8" width="42" height="10" rx="5" fill="rgba(0,0,0,0.58)"/>
+            {/* Camera */}
+            <circle cx="135" cy="13" r="3.5" fill="rgba(5,5,15,0.80)"
+              stroke="rgba(255,255,255,0.08)" strokeWidth="0.5"/>
+            <circle cx="135" cy="13" r="1.8" fill="rgba(30,25,60,0.95)"/>
+            <circle cx="133.8" cy="11.8" r="0.7" fill="rgba(255,255,255,0.40)"/>
+
+            {/* ── HEALTH INDICATOR ── */}
+            {/* Wide soft bloom behind everything */}
+            <circle cx="135" cy="82" r="38" fill={color} opacity="0.08" filter="url(#softBlur)"/>
+            {/* Outer thin ring */}
+            <circle cx="135" cy="82" r="30" fill="none"
+              stroke={color} strokeWidth="0.7" opacity="0.30"/>
+            {/* Mid ring */}
+            <circle cx="135" cy="82" r="20" fill="none"
+              stroke={color} strokeWidth="1.5" opacity="0.65" filter="url(#indicGlow)"/>
+            {/* Inner fill */}
+            <circle cx="135" cy="82" r="13" fill={color} opacity="0.12"/>
+            {/* Core */}
+            <circle cx="135" cy="82" r="7" fill={color} opacity="0.95" filter="url(#indicGlow)"/>
+            {/* Core specular */}
+            <circle cx="133" cy="80" r="2.5" fill="rgba(255,255,255,0.75)"/>
+          </svg>
+        </div>
+      </div>
+    </>
   )
 }
 
