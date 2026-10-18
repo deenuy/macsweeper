@@ -76,17 +76,14 @@ const REDIRECT_URI = `http://127.0.0.1:${OAUTH_PORT}`
 
 // Singleton: only one auth flow at a time.
 let activeServer: http.Server | null = null
-let activeReject: ((e: Error) => void) | null = null
+let activePromise: Promise<string> | null = null
 
 function closeActiveServer() {
   if (activeServer) {
     try { activeServer.close() } catch { /* ignore */ }
     activeServer = null
   }
-  if (activeReject) {
-    activeReject(new Error('Auth superseded'))
-    activeReject = null
-  }
+  activePromise = null
 }
 
 /**
@@ -97,11 +94,10 @@ export async function startGmailAuth(): Promise<string> {
   const creds = loadCredentials()
   if (!creds) throw new Error('NO_CREDENTIALS')
 
-  // Close any in-progress auth before starting a new one.
-  closeActiveServer()
+  // If an auth is already in progress, reuse it — don't open a second browser window.
+  if (activePromise) return activePromise
 
-  return new Promise<string>((resolve, reject) => {
-    activeReject = reject
+  activePromise = new Promise<string>((resolve, reject) => {
 
     const auth = makeOAuth(REDIRECT_URI)
     const authUrl = auth.generateAuthUrl({
@@ -146,13 +142,17 @@ export async function startGmailAuth(): Promise<string> {
         res.writeHead(200, { 'Content-Type': 'text/html' })
         res.end(html(`Connected as ${email}! You can close this tab.`))
         closeActiveServer()
-        activeReject = null
         resolve(email)
-      } catch (e) {
+      } catch (e: unknown) {
+        const raw = e instanceof Error ? e.message : String(e)
+        const isCredsBad = raw.includes('invalid_client') || raw.includes('unauthorized_client')
+        const userMsg = isCredsBad
+          ? 'Invalid credentials — re-download the OAuth JSON from GCP Console and replace google-credentials.json.'
+          : `Authentication error: ${raw}`
         res.writeHead(500, { 'Content-Type': 'text/html' })
-        res.end(html('Authentication error. Please try again.'))
+        res.end(html(userMsg))
         closeActiveServer()
-        reject(e)
+        reject(new Error(userMsg))
       }
     })
 
@@ -181,6 +181,10 @@ export async function startGmailAuth(): Promise<string> {
       }, 5 * 60 * 1000)
     })
   })
+
+  // Clear activePromise when the flow settles so the next call starts fresh.
+  activePromise.finally(() => { activePromise = null })
+  return activePromise
 }
 
 // ── Account management ────────────────────────────────────────────────────────
