@@ -1,6 +1,6 @@
 import type { SystemSnapshot } from '../../../shared/types'
 import type { Page, PageTheme } from '../App'
-import { useTilt } from '../hooks/useTilt'
+import { memo, useEffect, useId, useRef } from 'react'
 
 function fmtBytes(n: number): string {
   if (n >= 1e12) return (n / 1e12).toFixed(2) + ' TB'
@@ -21,208 +21,254 @@ const HEALTH: Record<string, { color: string; glow: string }> = {
   Poor:      { color: '#ef4444', glow: 'rgba(239,68,68,0.30)' },
 }
 
-function MacHero({ score }: { score: string }) {
-  const { color, glow } = HEALTH[score] ?? HEALTH.Excellent
-  const { tilt, isResting, onMouseMove, onMouseLeave, tiltTransition } = useTilt(10)
+// Small, bounded-angle 3D illustration. Coordinates are in model space;
+// perspective projection is applied to every surface, including screen graphics.
+type HeroPoint = readonly [number, number, number]
+type HeroPath = { key: string; d: string; fill: string; stroke?: string; opacity?: number }
+const HERO_BASE = { yaw: 0.60, pitch: 0.20 }
 
-  // perspective is a CSS *property* on the parent — not inside transform —
-  // so the child's rotateY actually renders in 3D context.
-  const tiltTransform = `rotateX(${tilt.x * 0.4}deg) rotateY(${tilt.y * 0.4}deg)`
+function heroRect(w: number, h: number, r: number, z: number, x = 0, y = 0): HeroPoint[] {
+  const points: HeroPoint[] = []
+  const corners = [[w / 2 - r, h / 2 - r], [-w / 2 + r, h / 2 - r],
+    [-w / 2 + r, -h / 2 + r], [w / 2 - r, -h / 2 + r]]
+  corners.forEach(([cx, cy], corner) => {
+    for (let step = 0; step <= 6; step++) {
+      const a = (corner + step / 6) * Math.PI / 2
+      points.push([x + cx + Math.cos(a) * r, y + cy + Math.sin(a) * r, z])
+    }
+  })
+  return points
+}
+
+function heroCircle(x: number, y: number, r: number, z: number): HeroPoint[] {
+  return Array.from({ length: 40 }, (_, i) => {
+    const a = i * Math.PI / 20
+    return [x + Math.cos(a) * r, y + Math.sin(a) * r, z] as HeroPoint
+  })
+}
+
+// Successive rounded cross-sections make the deep, curved CRT enclosure.
+const HERO_RINGS = [
+  heroRect(2.84, 2.48, 0.34, 0.94),
+  heroRect(2.92, 2.52, 0.42, 0.66),
+  heroRect(2.84, 2.46, 0.53, 0.12),
+  heroRect(2.52, 2.20, 0.65, -0.58),
+  heroRect(1.98, 1.80, 0.66, -1.10),
+  heroRect(1.54, 1.40, 0.59, -1.30),
+]
+const HERO_SHELL = HERO_RINGS.slice(0, -1).flatMap((ring, row) =>
+  ring.map((p, i) => [p, HERO_RINGS[row + 1][i],
+    HERO_RINGS[row + 1][(i + 1) % ring.length], ring[(i + 1) % ring.length]]))
+
+function heroFrame(yaw: number, pitch: number, lift: number, id: string): HeroPath[] {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw)
+  const cx = Math.cos(pitch), sx = Math.sin(pitch)
+  const rotate = ([x, y, z]: HeroPoint): HeroPoint => {
+    const rx = x * 1.20 * cy + z * sy, rz = -x * 1.20 * sy + z * cy
+    return [rx, y * cx - rz * sx, y * sx + rz * cx]
+  }
+  const path = (points: readonly HeroPoint[], close = true) => points.map((p, i) => {
+    const [x, y, z] = rotate(p)
+    const scale = 65 * 8 / (8 - z)
+    return `${i ? 'L' : 'M'}${(170 + x * scale).toFixed(2)},${(136 - y * scale + lift).toFixed(2)}`
+  }).join(' ') + (close ? ' Z' : '')
+  const gradient = (name: string) => `url(#${id}-${name})`
+  const paths: HeroPath[] = []
+  const add = (key: string, points: readonly HeroPoint[], fill: string,
+    stroke?: string, opacity?: number) => paths.push({ key, d: path(points), fill, stroke, opacity })
+
+  // Low kickstand, behind the CRT case. It follows the same camera as the case.
+  add('foot', [[-0.92,-1.17,0.48],[0.92,-1.17,0.48],[1.02,-1.48,0.80],[-1.02,-1.48,0.80]], gradient('foot'))
+  add('foot-lip', [[-1.02,-1.48,0.80],[1.02,-1.48,0.80],[1.02,-1.56,0.77],[-1.02,-1.56,0.77]], '#62508e')
+
+  // Opaque tinted surfaces simulate plastic; avoid incorrect alpha sorting.
+  // Backface culling + depth sorting is sufficient for this convex shell.
+  const faces = HERO_SHELL.map((points, i) => {
+    const p = points.map(rotate)
+    const u = p[1].map((v, j) => v - p[0][j])
+    const v = p[2].map((n, j) => n - p[0][j])
+    const n = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]]
+    const length = Math.hypot(...n) || 1
+    const normal = n.map(value => value / length)
+    const facing = normal[0] * -p[0][0] + normal[1] * -p[0][1] + normal[2] * (8 - p[0][2])
+    const light = Math.max(0, normal[0] * -0.45 + normal[1] * 0.78 + normal[2] * 0.43)
+    return { points, i, facing, depth: p.reduce((sum, point) => sum + point[2], 0) / p.length,
+      fill: `hsl(263, ${44 + light * 9}%, ${27 + light * 35}%)` }
+  }).filter(face => face.facing > 0).sort((a, b) => a.depth - b.depth)
+  faces.forEach(face => add(`shell-${face.i}`, face.points, face.fill, face.fill))
+
+  // A single front plane: rounded rim, inset CRT, chin and all screen graphics.
+  add('rim', heroRect(2.84, 2.48, 0.34, 0.955), gradient('rim'), '#c4afe7')
+  add('bezel', heroRect(2.66, 2.30, 0.29, 0.966), gradient('bezel'))
+  add('recess', heroRect(2.38, 1.82, 0.23, 0.977, 0, 0.14), '#51465e')
+  add('screen', heroRect(2.22, 1.66, 0.21, 0.989, 0, 0.14), gradient('screen'), '#201d30')
+  add('bloom', heroRect(2.20, 1.64, 0.20, 0.991, 0, 0.14), gradient('bloom'))
+  add('outer-ring', heroCircle(0, 0.14, 0.43, 1.002), 'none', 'var(--hero-health)', 0.23)
+  add('inner-ring', heroCircle(0, 0.14, 0.28, 1.004), 'none', 'var(--hero-health)', 0.75)
+  add('orb', heroCircle(0, 0.14, 0.16, 1.006), gradient('orb'))
+  add('orb-core', heroCircle(-0.015, 0.16, 0.053, 1.008), '#e5fdff')
+  add('reflection', heroRect(2.20, 1.64, 0.20, 1.011, 0, 0.14), gradient('sheen'))
+  add('drive', heroRect(0.80, 0.035, 0.017, 0.985, -0.18, -0.91), '#6e627c')
+  add('power', heroCircle(0.91, -0.91, 0.047, 0.986), 'var(--hero-health)', '#f2ecff')
+  // Subtle speaker perforations on the lower bezel.
+  for (const side of [-1, 1]) for (let i = 0; i < 4; i++) {
+    add(`vent-${side}-${i}`, heroRect(0.025, 0.095, 0.012, 0.984,
+      side * (0.61 + i * 0.045), -0.91), '#9585a6')
+  }
+  return paths
+}
+
+const MacHero = memo(function MacHero({ score }: { score: string }) {
+  const { color } = HEALTH[score] ?? HEALTH.Excellent
+  // Every instance owns its gradient IDs (including multiple Home previews).
+  const id = `mac-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const host = useRef<HTMLDivElement>(null)
+  const drawing = useRef<SVGGElement>(null)
+  const shadow = useRef<SVGEllipseElement>(null)
+
+  useEffect(() => {
+    const element = host.current, group = drawing.current, ground = shadow.current
+    if (!element || !group || !ground) return
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)')
+    const nodes = new Map<string, SVGPathElement>()
+    let frame = 0, previous = 0, phase = 0, inView = true, disposed = false
+    let pointerX = 0, pointerY = 0, hover = 0, hoverTarget = 0
+    let yaw = HERO_BASE.yaw, pitch = HERO_BASE.pitch, lift = 0
+    const clamp = (n: number) => Math.max(-1, Math.min(1, n))
+
+    const draw = () => {
+      const visible = new Set<string>()
+      const paths = heroFrame(yaw, pitch, lift, id)
+      paths.forEach((spec, index) => {
+        visible.add(spec.key)
+        let node = nodes.get(spec.key)
+        if (!node) {
+          node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+          node.setAttribute('stroke-linejoin', 'round')
+          node.setAttribute('stroke-width', spec.key.startsWith('shell-') ? '0.7' : '1')
+          nodes.set(spec.key, node)
+        }
+        node.removeAttribute('display')
+        node.setAttribute('d', spec.d)
+        node.setAttribute('fill', spec.fill)
+        node.setAttribute('stroke', spec.stroke ?? 'none')
+        node.setAttribute('opacity', String(spec.opacity ?? 1))
+        // Reorder only when visibility/depth order actually changes.
+        if (group.children[index] !== node) group.insertBefore(node, group.children[index] ?? null)
+      })
+      nodes.forEach((node, key) => { if (!visible.has(key)) node.setAttribute('display', 'none') })
+      ground.setAttribute('rx', String(91 + lift * 0.7))
+      ground.setAttribute('opacity', String(0.30 + lift * 0.009))
+    }
+    const stop = () => { cancelAnimationFrame(frame); frame = 0; previous = 0 }
+    const tick = (time: number) => {
+      frame = 0
+      if (disposed || document.hidden || !inView || media.matches) return
+      const dt = previous ? Math.min((time - previous) / 1000, 0.05) : 0
+      previous = time
+      phase += dt
+      // One continuous clock and eased target: enter/leave never resets the pose.
+      const ease = 1 - Math.exp(-8 * dt)
+      hover += (hoverTarget - hover) * ease
+      const wave = phase * Math.PI * 2 / 5.8
+      const targetYaw = HERO_BASE.yaw + Math.sin(wave) * 0.055 * (1 - hover) + pointerX * 0.14 * hover
+      const targetPitch = HERO_BASE.pitch - pointerY * 0.075 * hover
+      yaw += (targetYaw - yaw) * ease
+      pitch += (targetPitch - pitch) * ease
+      lift += (-3.5 * (1 - Math.cos(wave)) - lift) * ease
+      draw()
+      frame = requestAnimationFrame(tick)
+    }
+    const sync = () => {
+      stop()
+      if (media.matches) {
+        yaw = HERO_BASE.yaw; pitch = HERO_BASE.pitch; lift = 0; hover = 0
+        hoverTarget = 0; pointerX = 0; pointerY = 0
+        draw()
+      } else if (inView && !document.hidden && !disposed) frame = requestAnimationFrame(tick)
+    }
+    const move = (event: PointerEvent) => {
+      if (!finePointer.matches || event.pointerType === 'touch' || media.matches) return
+      const rect = element.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      pointerX = clamp((event.clientX - rect.left) / rect.width * 2 - 1)
+      pointerY = clamp((event.clientY - rect.top) / rect.height * 2 - 1)
+      hoverTarget = 1
+    }
+    const leave = () => { hoverTarget = 0 }
+    const visibility = () => { if (document.hidden) leave(); sync() }
+    const observer = typeof IntersectionObserver !== 'undefined'
+      ? new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; if (!inView) leave(); sync() })
+      : null
+    draw()
+    observer?.observe(element)
+    element.addEventListener('pointermove', move, { passive: true })
+    element.addEventListener('pointerleave', leave)
+    element.addEventListener('pointercancel', leave)
+    window.addEventListener('blur', leave)
+    document.addEventListener('visibilitychange', visibility)
+    media.addEventListener('change', sync)
+    sync()
+    return () => {
+      disposed = true; stop(); observer?.disconnect()
+      element.removeEventListener('pointermove', move)
+      element.removeEventListener('pointerleave', leave)
+      element.removeEventListener('pointercancel', leave)
+      window.removeEventListener('blur', leave)
+      document.removeEventListener('visibilitychange', visibility)
+      media.removeEventListener('change', sync)
+      group.replaceChildren()
+    }
+  }, [id])
 
   return (
-    <>
-      <style>{`
-        @keyframes iMacFloat {
-          0%,100% { transform: translateY(0px) rotateY(-4deg); }
-          50%      { transform: translateY(-10px) rotateY(4deg); }
-        }
-      `}</style>
-      {/* perspective on the parent gives children a real 3D rendering context */}
-      <div
-        onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
-        style={{
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          perspective: '1000px',
-          cursor: 'default',
-        }}>
-        <div style={{
-          transform: isResting ? undefined : tiltTransform,
-          transition: tiltTransition,
-          animation: isResting ? 'iMacFloat 4.2s ease-in-out infinite' : 'none',
-          filter: `drop-shadow(-10px 28px 50px ${glow}) drop-shadow(-3px 10px 20px rgba(0,0,0,0.60))`,
-          willChange: 'transform',
-        }}>
-          {/*
-            ┌─────────────────────────────────────────────────────────────────┐
-            │  iMAC G3-STYLE: viewed from upper-left                          │
-            │  Depth axis goes upper-right: (+0.48, -0.28) per unit back      │
-            │  LEFT side panel is the near face (correctly facing viewer)      │
-            │                                                                  │
-            │  Key paths:                                                      │
-            │    Left panel:  (8,46)→(8,182)→(80,200)→(80,22)                 │
-            │    Front face:  (80,22)→(242,34)→(242,204)→(80,200)             │
-            │    Top strip:   (80,22)→(242,34)→(246,27)→(84,15)              │
-            │    Stand:       foot below body                                  │
-            └─────────────────────────────────────────────────────────────────┘
-          */}
-          <svg width="275" height="218" viewBox="0 0 275 218" fill="none">
-            <defs>
-              {/* LEFT PANEL — richest purple, primary 3D face, lit upper-left */}
-              <radialGradient id="igLeft" cx="30%" cy="20%" r="70%">
-                <stop offset="0%"   stopColor="rgba(198,165,255,0.75)"/>
-                <stop offset="38%"  stopColor="rgba(140,102,238,0.52)"/>
-                <stop offset="100%" stopColor="rgba(48,22,128,0.30)"/>
-              </radialGradient>
-              {/* Left panel specular — top-left bright lobe (suggests curved glass) */}
-              <radialGradient id="igLeftSpec" cx="26%" cy="16%" r="48%">
-                <stop offset="0%"   stopColor="rgba(255,255,255,0.50)"/>
-                <stop offset="60%"  stopColor="rgba(255,255,255,0.08)"/>
-                <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
-              </radialGradient>
-              {/* FRONT FACE — lighter glass (slightly more face-on, less saturated) */}
-              <radialGradient id="igFront" cx="16%" cy="13%" r="76%">
-                <stop offset="0%"   stopColor="rgba(228,208,255,0.54)"/>
-                <stop offset="44%"  stopColor="rgba(168,138,248,0.22)"/>
-                <stop offset="100%" stopColor="rgba(68,40,158,0.09)"/>
-              </radialGradient>
-              <radialGradient id="igFrontSpec" cx="18%" cy="10%" r="52%">
-                <stop offset="0%"   stopColor="rgba(255,255,255,0.58)"/>
-                <stop offset="34%"  stopColor="rgba(255,255,255,0.12)"/>
-                <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
-              </radialGradient>
-              {/* Health color spills from screen onto front face */}
-              <radialGradient id="igFrontGlow" cx="53%" cy="53%" r="42%">
-                <stop offset="0%"   stopColor={color} stopOpacity="0.22"/>
-                <stop offset="100%" stopColor={color} stopOpacity="0"/>
-              </radialGradient>
-              {/* TOP STRIP — brightest (lit from above) */}
-              <linearGradient id="igTop" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%"   stopColor="rgba(222,206,255,0.75)"/>
-                <stop offset="100%" stopColor="rgba(148,118,238,0.38)"/>
-              </linearGradient>
-              {/* SCREEN */}
-              <radialGradient id="igScreen" cx="50%" cy="52%" r="56%">
-                <stop offset="0%"   stopColor="#0d1020"/>
-                <stop offset="100%" stopColor="#030508"/>
-              </radialGradient>
-              <radialGradient id="igBloom" cx="50%" cy="50%" r="52%">
-                <stop offset="0%"   stopColor={color} stopOpacity="0.72"/>
-                <stop offset="46%"  stopColor={color} stopOpacity="0.22"/>
-                <stop offset="100%" stopColor={color} stopOpacity="0"/>
-              </radialGradient>
-              <linearGradient id="igSheen" x1="0" y1="0" x2="0.18" y2="1">
-                <stop offset="0%"   stopColor="rgba(255,255,255,0.15)"/>
-                <stop offset="36%"  stopColor="rgba(255,255,255,0.03)"/>
-                <stop offset="100%" stopColor="rgba(255,255,255,0)"/>
-              </linearGradient>
-              {/* STAND */}
-              <linearGradient id="igStand" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="rgba(168,135,252,0.48)"/>
-                <stop offset="100%" stopColor="rgba(58,32,145,0.22)"/>
-              </linearGradient>
-              <filter id="igGlow" x="-100%" y="-100%" width="300%" height="300%">
-                <feGaussianBlur stdDeviation="5" result="b"/>
-                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
-              <filter id="igBlur" x="-40%" y="-40%" width="180%" height="180%">
-                <feGaussianBlur stdDeviation="4"/>
-              </filter>
-              <clipPath id="igScreenClip">
-                <polygon points="98,43 232,50 232,189 98,182"/>
-              </clipPath>
-            </defs>
-
-            {/* Ground shadow — centred under body */}
-            <ellipse cx="148" cy="215" rx="112" ry="7" fill="rgba(0,0,0,0.42)" filter="url(#igBlur)"/>
-
-            {/* ══ TOP STRIP (facing up, lit from above) ═══════════════════ */}
-            <path d="M 80,22 L 242,34 L 246,27 L 84,15 Z" fill="url(#igTop)"/>
-            <line x1="80" y1="22" x2="242" y2="34" stroke="rgba(255,255,255,0.52)" strokeWidth="1.6"/>
-            <line x1="80" y1="22" x2="84" y2="15"  stroke="rgba(255,255,255,0.36)" strokeWidth="1.2"/>
-
-            {/* ══ LEFT PANEL (the near side face — key 3D depth cue) ══════ */}
-            {/* Rounded body shape: left edge has curved corners */}
-            <path d="M 80,22
-                     L 16,30 C 8,32 6,40 6,48
-                     L 6,178 C 6,188 10,194 18,196
-                     L 80,200 Z"
-              fill="url(#igLeft)"/>
-            <path d="M 80,22
-                     L 16,30 C 8,32 6,40 6,48
-                     L 6,178 C 6,188 10,194 18,196
-                     L 80,200 Z"
-              fill="url(#igLeftSpec)"/>
-            {/* Diagonal gloss sweep — characteristic iMac G3 reflection */}
-            <path d="M 14,36 L 44,26 L 80,58 L 50,68 Z"
-              fill="rgba(255,255,255,0.13)" style={{ mixBlendMode: 'screen' }}/>
-            {/* Left outer edge highlight */}
-            <path d="M 16,30 C 8,32 6,40 6,48 L 6,165"
-              stroke="rgba(255,255,255,0.44)" strokeWidth="2" fill="none" strokeLinecap="round"/>
-            {/* Top edge of left panel */}
-            <line x1="16" y1="30" x2="80" y2="22" stroke="rgba(255,255,255,0.46)" strokeWidth="1.6"/>
-
-            {/* ══ FRONT FACE (screen side) ════════════════════════════════ */}
-            <path d="M 80,22
-                     L 242,34 C 248,35 252,40 252,47
-                     L 252,196 C 252,203 248,207 242,205
-                     L 80,200 Z"
-              fill="url(#igFront)"/>
-            <path d="M 80,22
-                     L 242,34 C 248,35 252,40 252,47
-                     L 252,196 C 252,203 248,207 242,205
-                     L 80,200 Z"
-              fill="url(#igFrontGlow)"/>
-            <path d="M 80,22
-                     L 242,34 C 248,35 252,40 252,47
-                     L 252,196 C 252,203 248,207 242,205
-                     L 80,200 Z"
-              fill="url(#igFrontSpec)"/>
-            {/* Left rim — seam between left panel and front face */}
-            <line x1="80" y1="22" x2="80" y2="200" stroke="rgba(255,255,255,0.32)" strokeWidth="2"/>
-            {/* Bottom seam */}
-            <line x1="84" y1="200" x2="238" y2="205" stroke="rgba(0,0,0,0.20)" strokeWidth="1.8"/>
-
-            {/* ── SCREEN BEZEL ─────────────────────────────────────────── */}
-            <polygon points="92,36 238,44 238,196 92,188" fill="rgba(0,0,0,0.70)"/>
-
-            {/* ── SCREEN PANEL ─────────────────────────────────────────── */}
-            <polygon points="98,43 232,50 232,189 98,182" fill="url(#igScreen)"/>
-            <polygon points="98,43 232,50 232,189 98,182" fill="url(#igBloom)"/>
-            <polygon points="98,43 232,50 232,189 98,182" fill="url(#igSheen)"/>
-
-            {/* ── CAMERA (top center of front bezel) ───────────────────── */}
-            <circle cx="162" cy="29" r="3.4" fill="rgba(5,5,18,0.88)"
-              stroke="rgba(255,255,255,0.08)" strokeWidth="0.5"/>
-            <circle cx="162" cy="29" r="1.7" fill="rgba(22,16,52,0.95)"/>
-            <circle cx="160.8" cy="27.8" r="0.65" fill="rgba(255,255,255,0.46)"/>
-
-            {/* ── HEALTH INDICATOR (clipped to screen panel) ───────────── */}
-            {/* Screen center: x=(98+232)/2=165, y=(43+189)/2=116 */}
-            <g clipPath="url(#igScreenClip)">
-              <circle cx="165" cy="116" r="44" fill={color} opacity="0.09" filter="url(#igBlur)"/>
-              <circle cx="165" cy="116" r="32" fill="none" stroke={color} strokeWidth="0.7" opacity="0.30"/>
-              <circle cx="165" cy="116" r="21" fill="none" stroke={color} strokeWidth="1.5" opacity="0.68" filter="url(#igGlow)"/>
-              <circle cx="165" cy="116" r="13" fill={color} opacity="0.13"/>
-              <circle cx="165" cy="116" r="7"  fill={color} opacity="0.96" filter="url(#igGlow)"/>
-              <circle cx="163.2" cy="114.2" r="2.4" fill="rgba(255,255,255,0.84)"/>
-            </g>
-
-            {/* ══ STAND / FOOT ════════════════════════════════════════════ */}
-            {/* Left side of stand */}
-            <path d="M 80,200 L 106,206 L 102,216 L 80,208 Z"
-              fill="rgba(82,50,182,0.58)"/>
-            {/* Front of stand */}
-            <path d="M 106,206 L 214,212 L 210,220 L 102,216 Z"
-              fill="url(#igStand)"/>
-            {/* Stand top rim */}
-            <line x1="80" y1="200" x2="214" y2="212"
-              stroke="rgba(202,180,255,0.36)" strokeWidth="1.2"/>
-          </svg>
-        </div>
-      </div>
-    </>
+    <div ref={host} style={{ width: '100%', maxWidth: 340, minWidth: 0,
+      lineHeight: 0, '--hero-health': color } as React.CSSProperties}>
+      <svg viewBox="0 0 340 280" role="img" aria-labelledby={`${id}-title`}
+        style={{ display: 'block', width: '100%', height: 'auto', overflow: 'visible' }}>
+        <title id={`${id}-title`}>iMac G3 inspired computer — health: {score}</title>
+        <defs>
+          <linearGradient id={`${id}-rim`} x2="0.2" y2="1">
+            <stop stopColor="#eee4fa"/><stop offset="0.45" stopColor="#b8a2d4"/>
+            <stop offset="1" stopColor="#80669e"/>
+          </linearGradient>
+          <linearGradient id={`${id}-bezel`} x2="0.15" y2="1">
+            <stop stopColor="#d7cee0"/><stop offset="0.5" stopColor="#b8a9c6"/>
+            <stop offset="1" stopColor="#9986ae"/>
+          </linearGradient>
+          <linearGradient id={`${id}-foot`} x2="0" y2="1">
+            <stop stopColor="#b9a4d7"/><stop offset="1" stopColor="#776091"/>
+          </linearGradient>
+          <radialGradient id={`${id}-screen`}>
+            <stop stopColor="#14212c"/><stop offset="1" stopColor="#070a12"/>
+          </radialGradient>
+          <radialGradient id={`${id}-bloom`}>
+            <stop stopColor="var(--hero-health)" stopOpacity="0.29"/>
+            <stop offset="1" stopColor="var(--hero-health)" stopOpacity="0"/>
+          </radialGradient>
+          <radialGradient id={`${id}-orb`}>
+            <stop stopColor="var(--hero-health)" stopOpacity="0.95"/>
+            <stop offset="1" stopColor="var(--hero-health)" stopOpacity="0.03"/>
+          </radialGradient>
+          <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="0.4" y2="1">
+            <stop stopColor="white" stopOpacity="0.19"/>
+            <stop offset="0.48" stopColor="white" stopOpacity="0.02"/>
+            <stop offset="1" stopColor="white" stopOpacity="0"/>
+          </linearGradient>
+          <radialGradient id={`${id}-ground`}>
+            <stop stopColor="#05020c" stopOpacity="0.9"/>
+            <stop offset="1" stopColor="#05020c" stopOpacity="0"/>
+          </radialGradient>
+        </defs>
+        {/* Ground is outside the animated model. No moving drop-shadow filters. */}
+        <ellipse ref={shadow} cx="170" cy="253" rx="91" ry="13" fill={`url(#${id}-ground)`} opacity="0.3"/>
+        {/* This group is owned exclusively by the effect, not by React children. */}
+        <g ref={drawing}/>
+      </svg>
+    </div>
   )
-}
+})
 
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
