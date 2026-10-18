@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
+import { hasFullDiskAccess } from './permissions'
 import {
   startGmailAuth, getConnectedAccounts, disconnectAccount,
   scanEmailsByRules, deleteEmails, getCredentialsPath, hasCredentials
@@ -226,6 +227,16 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('window:close', () => {
     getFocusedWindow()?.close()
+  })
+
+  // ── Permissions ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('permissions:checkFDA', () => hasFullDiskAccess())
+
+  ipcMain.handle('permissions:openFDASettings', () => {
+    shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'
+    )
   })
 
   // ── Gmail OAuth & API ────────────────────────────────────────────────────────

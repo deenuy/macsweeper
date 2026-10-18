@@ -8,6 +8,7 @@ import SpaceLens from './components/SpaceLens'
 import CloudCleanup from './components/CloudCleanup'
 import MailCleaner from './components/MailCleaner'
 import UpdateBanner from './components/UpdateBanner'
+import FDAPrompt from './components/FDAPrompt'
 import type { DiskStats } from '../../shared/types'
 
 export type Page = 'dashboard' | 'junk' | 'duplicates' | 'space-lens' | 'cloud' | 'mail'
@@ -61,10 +62,12 @@ export const PAGE_THEMES: Record<Page, PageTheme> = {
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [diskStats, setDiskStats] = useState<DiskStats | null>(null)
+  const [fdaGranted, setFdaGranted] = useState<boolean | null>(null)
   const theme = PAGE_THEMES[page]
 
   useEffect(() => {
     window.electron.getDiskStats().then(setDiskStats).catch(console.error)
+    window.electron.checkFDA().then(setFdaGranted).catch(() => setFdaGranted(true))
   }, [])
 
   const renderPage = () => {
@@ -88,6 +91,9 @@ export default function App() {
       overflow: 'hidden',
       transition: 'background 0.5s ease'
     }}>
+      {fdaGranted === false && (
+        <FDAPrompt onGranted={() => setFdaGranted(true)} />
+      )}
       <UpdateBanner />
       <TitleBar />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

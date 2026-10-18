@@ -70,6 +70,10 @@ const electronAPI = {
     return () => ipcRenderer.removeListener('updater:downloaded', h)
   },
 
+  // Permissions
+  checkFDA: (): Promise<boolean> => ipcRenderer.invoke('permissions:checkFDA'),
+  openFDASettings: (): Promise<void> => ipcRenderer.invoke('permissions:openFDASettings'),
+
   minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   maximize: (): Promise<void> => ipcRenderer.invoke('window:maximize'),
   close: (): Promise<void> => ipcRenderer.invoke('window:close'),

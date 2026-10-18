@@ -18,7 +18,7 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "package": "npm run build && npx electron-builder --mac --dir",
     "install-app": "npm run package && cp -r dist/mac-arm64/MacSweeper.app /Applications/",
-    "dmg": "npm run build && npx electron-builder --mac --arm64"
+    "dmg": "npm run build && npx electron-builder --mac --arm64 && rm -rf dist/mac dist/mac-arm64 && touch dist/.metadata_never_index"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
