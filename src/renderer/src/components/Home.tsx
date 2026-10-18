@@ -171,18 +171,51 @@ function Bar({ pct, warn = 70, danger = 85, invert = false, accent }: {
   )
 }
 
-function MetricRow({ label, value, sub, pct, warn, danger, invert, accent }: {
-  label: string; value: string; sub?: string
-  pct?: number; warn?: number; danger?: number; invert?: boolean; accent: string
+// Color helpers — value text only, no bars
+function pressureColor(pct: number) {
+  return pct >= 80 ? '#f87171' : pct >= 60 ? '#fb923c' : 'rgba(255,255,255,0.90)'
+}
+function loadColor(pct: number) {
+  return pct >= 80 ? '#f87171' : pct >= 60 ? '#fb923c' : 'rgba(255,255,255,0.90)'
+}
+function batteryColor(pct: number, charging: boolean) {
+  if (charging) return '#4ade80'
+  return pct <= 10 ? '#f87171' : pct <= 25 ? '#fb923c' : 'rgba(255,255,255,0.90)'
+}
+
+// Icon-row tile: no bars, just icon + label + value (CleanMyMac style)
+function MetricTile({ icon, label, value, sub, valueColor, action, onAction }: {
+  icon: React.ReactNode; label: string; value: string
+  sub?: string; valueColor?: string; action?: string; onAction?: () => void
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>{label}</span>
-        <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{
+        width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+        background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: 'rgba(255,255,255,0.55)',
+      }}>
+        {icon}
       </div>
-      {pct !== undefined && <Bar pct={pct} warn={warn} danger={danger} invert={invert} accent={accent} />}
-      {sub && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)' }}>{sub}</span>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', marginTop: 1 }}>{sub}</div>}
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{
+          fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+          color: valueColor ?? 'rgba(255,255,255,0.90)',
+          transition: 'color 0.4s',
+        }}>{value}</div>
+        {action && (
+          <button onClick={onAction} style={{
+            fontSize: 10, fontWeight: 700, color: '#818cf8',
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            letterSpacing: '0.02em',
+          }}>{action}</button>
+        )}
+      </div>
     </div>
   )
 }
@@ -326,45 +359,48 @@ export default function Home({ snap, totalFreed, fdaGranted, onNavigate, theme }
             </button>
           </Card>
 
-          <Card style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Card style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
               textTransform: 'uppercase', color: 'rgba(255,255,255,0.40)' }}>
               Live Metrics
             </div>
             {snap ? (
               <>
-                <MetricRow label="Memory Pressure" value={`${snap.memory.pressurePercent}%`}
-                  pct={snap.memory.pressurePercent} warn={60} danger={80} accent={theme.accent} />
-                <MetricRow label="CPU Load" value={`${snap.cpu.loadPercent}%`}
-                  pct={snap.cpu.loadPercent} warn={60} danger={80} accent={theme.accent} />
-                <MetricRow label="Battery" value={`${snap.battery.percent}%`}
-                  sub={snap.battery.fullyCharged ? 'Fully charged'
-                    : snap.battery.charging ? 'Charging' : 'On battery'}
-                  pct={snap.battery.percent} warn={25} danger={10} invert accent={theme.accent} />
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '2px 0' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.40)', marginBottom: 4 }}>
-                      {snap.network.ssid || 'Wi-Fi'}
-                    </div>
-                    <div style={{ display: 'flex', gap: 14 }}>
-                      <span style={{ fontSize: 12 }}>
-                        <span style={{ color: '#86efac' }}>↑</span> {fmtRate(snap.network.upKBps)}
-                      </span>
-                      <span style={{ fontSize: 12 }}>
-                        <span style={{ color: '#67e8f9' }}>↓</span> {fmtRate(snap.network.downKBps)}
-                      </span>
-                    </div>
-                  </div>
-                  {snap.connectedDevices.length > 0 && (
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 3 }}>External</div>
-                      {snap.connectedDevices.map(d => (
-                        <div key={d.path} style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>{d.name}</div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <MetricTile
+                  icon={<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="4.5" width="13" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><rect x="3.5" y="6.5" width="1.5" height="2" rx="0.5" fill="currentColor"/><rect x="6.5" y="6.5" width="1.5" height="2" rx="0.5" fill="currentColor"/><rect x="9.5" y="6.5" width="1.5" height="2" rx="0.5" fill="currentColor"/><rect x="0" y="7" width="1" height="1.5" fill="currentColor"/><rect x="14" y="7" width="1" height="1.5" fill="currentColor"/></svg>}
+                  label="Memory" value={`${snap.memory.pressurePercent}%`}
+                  sub="pressure" valueColor={pressureColor(snap.memory.pressurePercent)}
+                  action="Free Up" onAction={() => onNavigate('junk')}
+                />
+                <MetricTile
+                  icon={<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="2" y="2" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.3"/><rect x="5" y="5" width="5" height="5" rx="1" fill="currentColor" opacity="0.6"/></svg>}
+                  label="CPU" value={`${snap.cpu.loadPercent}%`}
+                  sub="load" valueColor={loadColor(snap.cpu.loadPercent)}
+                />
+                <MetricTile
+                  icon={<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1.5" y="3.5" width="11" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><rect x="12.5" y="6" width="1.5" height="3" rx="0.75" fill="currentColor" opacity="0.5"/><rect x="3" y="5" width={`${Math.round(snap.battery.percent / 14)}`} height="4" rx="0.8" fill="currentColor"/></svg>}
+                  label="Battery" value={`${snap.battery.percent}%`}
+                  sub={snap.battery.fullyCharged ? 'Fully charged' : snap.battery.charging ? 'Charging' : 'On battery'}
+                  valueColor={batteryColor(snap.battery.percent, snap.battery.charging)}
+                />
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+                <MetricTile
+                  icon={<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1 5.5C3.5 2.5 11.5 2.5 14 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M3 8C4.8 6 10.2 6 12 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M5.5 10.5C6.5 9.5 8.5 9.5 9.5 10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="7.5" cy="13" r="1" fill="currentColor"/></svg>}
+                  label={snap.network.ssid || 'Wi-Fi'}
+                  value={`↑ ${fmtRate(snap.network.upKBps)}`}
+                  sub={`↓ ${fmtRate(snap.network.downKBps)}`}
+                />
+                {snap.connectedDevices.length > 0 && (
+                  <>
+                    <div style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+                    {snap.connectedDevices.map(d => (
+                      <MetricTile key={d.path}
+                        icon={<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="4" y="1" width="7" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M2 11h11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><ellipse cx="7.5" cy="13.5" rx="3" ry="1" stroke="currentColor" strokeWidth="1"/></svg>}
+                        label={d.name} value="External" valueColor="rgba(255,255,255,0.50)"
+                      />
+                    ))}
+                  </>
+                )}
               </>
             ) : (
               <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>Loading...</div>
