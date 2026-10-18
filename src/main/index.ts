@@ -128,7 +128,7 @@ function setupAutoUpdater(win: BrowserWindow): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('app.macsweeper')
 
   app.on('browser-window-created', (_, window) => {
@@ -137,7 +137,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
   buildMenu()
-  startSnapshotRefresh()
+  await startSnapshotRefresh()   // cache warm before window opens
   const win = createWindow()
   setupAutoUpdater(win)
 

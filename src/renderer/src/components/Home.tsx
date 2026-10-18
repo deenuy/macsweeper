@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react'
 import type { SystemSnapshot } from '../../../shared/types'
 import type { Page, PageTheme } from '../App'
 import { useTilt } from '../hooks/useTilt'
@@ -22,7 +21,6 @@ const HEALTH: Record<string, { color: string; glow: string }> = {
   Poor:      { color: '#ef4444', glow: 'rgba(239,68,68,0.30)' },
 }
 
-// ── MacBook hero illustration ──────────────────────────────────────────────
 function MacHero({ score }: { score: string }) {
   const { color, glow } = HEALTH[score] ?? HEALTH.Excellent
   const { onMouseMove, onMouseLeave, tiltTransform, tiltTransition } = useTilt(22)
@@ -33,87 +31,56 @@ function MacHero({ score }: { score: string }) {
       style={{ display: 'flex', justifyContent: 'center', alignItems: 'center',
         transform: tiltTransform, transition: tiltTransition, cursor: 'default' }}>
       <div style={{ position: 'relative', width: 240, height: 210 }}>
-        {/* Outer ambient glow */}
         <div style={{ position: 'absolute', inset: -24, borderRadius: '50%',
           background: `radial-gradient(circle, ${glow} 0%, transparent 65%)`,
           transition: 'background 0.6s ease' }} />
-
         <svg width="240" height="210" viewBox="0 0 240 210" fill="none" style={{ position: 'relative', zIndex: 1 }}>
           <defs>
-            <radialGradient id="hRing" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={color} stopOpacity="0"/>
-              <stop offset="70%" stopColor={color} stopOpacity="0.5"/>
-              <stop offset="100%" stopColor={color} stopOpacity="0"/>
-            </radialGradient>
             <linearGradient id="hLid" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1e2d4e"/>
-              <stop offset="100%" stopColor="#0a1628"/>
+              <stop offset="0%" stopColor="#1e2d4e"/><stop offset="100%" stopColor="#0a1628"/>
             </linearGradient>
             <linearGradient id="hScreen" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor="#1e3a6e" stopOpacity="0.9"/>
               <stop offset="100%" stopColor="#0e4a5e" stopOpacity="0.7"/>
             </linearGradient>
             <linearGradient id="hBase" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1a2540"/>
-              <stop offset="100%" stopColor="#0e1a30"/>
+              <stop offset="0%" stopColor="#1a2540"/><stop offset="100%" stopColor="#0e1a30"/>
             </linearGradient>
             <filter id="hGlow" x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur stdDeviation="4" result="b"/>
               <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
             </filter>
           </defs>
-
-          {/* Glowing ring */}
           <ellipse cx="120" cy="112" rx="82" ry="72" fill="none"
             stroke={color} strokeWidth="1.5" opacity="0.45" filter="url(#hGlow)"/>
           <ellipse cx="120" cy="112" rx="66" ry="56" fill="none"
             stroke={color} strokeWidth="0.8" opacity="0.25"/>
-
-          {/* Screen lid */}
           <rect x="32" y="22" width="176" height="118" rx="10"
             fill="url(#hLid)" stroke="rgba(255,255,255,0.10)" strokeWidth="1"/>
-          {/* Screen */}
           <rect x="40" y="30" width="160" height="102" rx="5" fill="#050c1e"/>
-          {/* Screen content glow */}
           <rect x="46" y="36" width="148" height="90" rx="3" fill="url(#hScreen)"/>
-          {/* Screen highlight */}
-          <rect x="46" y="36" width="148" height="16" rx="3"
-            fill="rgba(255,255,255,0.04)"/>
-          {/* Notch */}
+          <rect x="46" y="36" width="148" height="16" rx="3" fill="rgba(255,255,255,0.04)"/>
           <rect x="104" y="22" width="32" height="6" rx="3" fill="#050c1e"/>
-          {/* Camera */}
           <circle cx="120" cy="25" r="2.5" fill="rgba(255,255,255,0.12)"/>
-
-          {/* Screen icon */}
           <circle cx="120" cy="83" r="18" fill={color} opacity="0.12"/>
-          <circle cx="120" cy="83" r="10" fill="none"
-            stroke={color} strokeWidth="2.5" opacity="0.8"/>
+          <circle cx="120" cy="83" r="10" fill="none" stroke={color} strokeWidth="2.5" opacity="0.8"/>
           <circle cx="120" cy="83" r="3.5" fill={color} opacity="0.9"/>
-
-          {/* Hinge line */}
-          <rect x="32" y="140" width="176" height="4" rx="2"
-            fill="rgba(255,255,255,0.04)"/>
-          {/* Base/keyboard */}
+          <rect x="32" y="140" width="176" height="4" rx="2" fill="rgba(255,255,255,0.04)"/>
           <rect x="20" y="144" width="200" height="34" rx="6"
             fill="url(#hBase)" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
-          {/* Keyboard hint */}
           <rect x="36" y="152" width="56" height="4" rx="2" fill="rgba(255,255,255,0.05)"/>
           <rect x="100" y="152" width="40" height="4" rx="2" fill="rgba(255,255,255,0.04)"/>
           <rect x="148" y="152" width="56" height="4" rx="2" fill="rgba(255,255,255,0.05)"/>
           <rect x="36" y="160" width="168" height="4" rx="2" fill="rgba(255,255,255,0.04)"/>
-          {/* Trackpad */}
           <rect x="90" y="166" width="60" height="8" rx="2.5"
             fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
-          {/* Bottom edge */}
-          <rect x="20" y="178" width="200" height="4" rx="2"
-            fill="rgba(0,0,0,0.35)"/>
+          <rect x="20" y="178" width="200" height="4" rx="2" fill="rgba(0,0,0,0.35)"/>
         </svg>
       </div>
     </div>
   )
 }
 
-// ── Shared card wrapper ────────────────────────────────────────────────────
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{
@@ -128,11 +95,15 @@ function Card({ children, style }: { children: React.ReactNode; style?: React.CS
   )
 }
 
-// ── Gradient bar ───────────────────────────────────────────────────────────
-function Bar({ pct, warn = 70, danger = 85 }: { pct: number; warn?: number; danger?: number }) {
-  const color = pct >= danger
+// invert=true: bar is red when value is LOW (used for battery — high % is good)
+function Bar({ pct, warn = 70, danger = 85, invert = false }: {
+  pct: number; warn?: number; danger?: number; invert?: boolean
+}) {
+  const isBad  = invert ? pct <= danger : pct >= danger
+  const isWarn = invert ? pct <= warn   : pct >= warn
+  const color = isBad
     ? 'linear-gradient(90deg,#ef4444,#dc2626)'
-    : pct >= warn
+    : isWarn
     ? 'linear-gradient(90deg,#f97316,#ea580c)'
     : 'linear-gradient(90deg,#6366f1,#8b5cf6)'
   return (
@@ -143,9 +114,9 @@ function Bar({ pct, warn = 70, danger = 85 }: { pct: number; warn?: number; dang
   )
 }
 
-// ── Metric row ─────────────────────────────────────────────────────────────
-function MetricRow({ label, value, sub, pct, warn, danger }: {
-  label: string; value: string; sub?: string; pct?: number; warn?: number; danger?: number
+function MetricRow({ label, value, sub, pct, warn, danger, invert }: {
+  label: string; value: string; sub?: string
+  pct?: number; warn?: number; danger?: number; invert?: boolean
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -153,39 +124,29 @@ function MetricRow({ label, value, sub, pct, warn, danger }: {
         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>{label}</span>
         <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
       </div>
-      {pct !== undefined && <Bar pct={pct} warn={warn} danger={danger} />}
+      {pct !== undefined && <Bar pct={pct} warn={warn} danger={danger} invert={invert} />}
       {sub && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)' }}>{sub}</span>}
     </div>
   )
 }
 
 interface Props {
+  snap: SystemSnapshot | null
+  totalFreed: number
+  fdaGranted: boolean | null
   onNavigate: (page: Page) => void
   theme: PageTheme
 }
 
-export default function Home({ onNavigate, theme }: Props) {
-  const [snap, setSnap] = useState<SystemSnapshot | null>(null)
-  const [totalFreed, setTotalFreed] = useState(0)
-  const [fdaGranted, setFdaGranted] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    window.electron.checkFDA().then(setFdaGranted).catch(() => setFdaGranted(true))
-    window.electron.getTotalFreed().then(setTotalFreed).catch(() => {})
-    const load = () => window.electron.getSystemSnapshot().then(setSnap).catch(() => {})
-    load()
-    const id = setInterval(load, 4000)
-    return () => clearInterval(id)
-  }, [])
-
+// Pure display — all data arrives as props from App. No self-polling.
+export default function Home({ snap, totalFreed, fdaGranted, onNavigate, theme }: Props) {
   const score = snap?.healthScore ?? 'Excellent'
   const { color: healthColor } = HEALTH[score] ?? HEALTH.Excellent
   const diskUsedPct = snap && snap.disk.totalBytes > 0
     ? (snap.disk.usedBytes / snap.disk.totalBytes) * 100 : 0
-
-  // Contextual recommendation
   const diskFreePct = snap && snap.disk.totalBytes > 0
     ? (snap.disk.freeBytes / snap.disk.totalBytes) * 100 : 50
+
   const rec = snap
     ? diskFreePct < 10
       ? { icon: '💽', title: 'Storage running low',
@@ -207,7 +168,6 @@ export default function Home({ onNavigate, theme }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, height: '100%' }}>
 
-      {/* Page title */}
       <div>
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, letterSpacing: '-0.03em' }}>
           Mac Health
@@ -217,17 +177,14 @@ export default function Home({ onNavigate, theme }: Props) {
         </p>
       </div>
 
-      {/* Main two-column grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, flex: 1, minHeight: 0 }}>
 
         {/* LEFT: Health hero */}
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 16, position: 'relative', overflow: 'hidden' }}>
-          {/* Ambient background glow matching health color */}
           <div style={{ position: 'absolute', top: -40, right: -40, width: 250, height: 250,
             borderRadius: '50%', background: `${healthColor}0E`, pointerEvents: 'none',
             transition: 'background 0.6s ease' }} />
 
-          {/* Score */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
               <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>Mac Health:</span>
@@ -244,12 +201,10 @@ export default function Home({ onNavigate, theme }: Props) {
             </div>
           </div>
 
-          {/* Mac illustration - hero element */}
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MacHero score={score} />
           </div>
 
-          {/* Disk bar */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 13, fontWeight: 600 }}>Macintosh HD</span>
@@ -270,7 +225,6 @@ export default function Home({ onNavigate, theme }: Props) {
             </div>
           </div>
 
-          {/* FDA pill */}
           {fdaGranted !== null && (
             <button
               onClick={fdaGranted ? undefined : () => window.electron.openFDASettings()}
@@ -288,10 +242,9 @@ export default function Home({ onNavigate, theme }: Props) {
           )}
         </Card>
 
-        {/* RIGHT: Metrics + Storage */}
+        {/* RIGHT column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Storage cleaned card */}
           <Card style={{ position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', bottom: -30, right: -30, width: 130, height: 130,
               borderRadius: '50%', background: `${theme.accent}10`, pointerEvents: 'none' }} />
@@ -316,7 +269,6 @@ export default function Home({ onNavigate, theme }: Props) {
             </button>
           </Card>
 
-          {/* Live metrics card */}
           <Card style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
               textTransform: 'uppercase', color: 'rgba(255,255,255,0.40)' }}>
@@ -329,8 +281,9 @@ export default function Home({ onNavigate, theme }: Props) {
                 <MetricRow label="CPU Load" value={`${snap.cpu.loadPercent}%`}
                   pct={snap.cpu.loadPercent} warn={60} danger={80} />
                 <MetricRow label="Battery" value={`${snap.battery.percent}%`}
-                  sub={snap.battery.fullyCharged ? 'Fully charged' : snap.battery.charging ? 'Charging' : 'On battery'}
-                  pct={snap.battery.percent} warn={25} danger={10} />
+                  sub={snap.battery.fullyCharged ? 'Fully charged'
+                    : snap.battery.charging ? 'Charging' : 'On battery'}
+                  pct={snap.battery.percent} warn={25} danger={10} invert />
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '2px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
@@ -338,8 +291,12 @@ export default function Home({ onNavigate, theme }: Props) {
                       {snap.network.ssid || 'Wi-Fi'}
                     </div>
                     <div style={{ display: 'flex', gap: 14 }}>
-                      <span style={{ fontSize: 12 }}><span style={{ color: '#86efac' }}>↑</span> {fmtRate(snap.network.upKBps)}</span>
-                      <span style={{ fontSize: 12 }}><span style={{ color: '#67e8f9' }}>↓</span> {fmtRate(snap.network.downKBps)}</span>
+                      <span style={{ fontSize: 12 }}>
+                        <span style={{ color: '#86efac' }}>↑</span> {fmtRate(snap.network.upKBps)}
+                      </span>
+                      <span style={{ fontSize: 12 }}>
+                        <span style={{ color: '#67e8f9' }}>↓</span> {fmtRate(snap.network.downKBps)}
+                      </span>
                     </div>
                   </div>
                   {snap.connectedDevices.length > 0 && (
@@ -359,7 +316,6 @@ export default function Home({ onNavigate, theme }: Props) {
         </div>
       </div>
 
-      {/* Recommendation strip */}
       {rec && (
         <Card style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 22px' }}>
           <div style={{
