@@ -96,8 +96,8 @@ function Card({ children, style }: { children: React.ReactNode; style?: React.CS
 }
 
 // invert=true: bar is red when value is LOW (used for battery — high % is good)
-function Bar({ pct, warn = 70, danger = 85, invert = false }: {
-  pct: number; warn?: number; danger?: number; invert?: boolean
+function Bar({ pct, warn = 70, danger = 85, invert = false, accent }: {
+  pct: number; warn?: number; danger?: number; invert?: boolean; accent: string
 }) {
   const isBad  = invert ? pct <= danger : pct >= danger
   const isWarn = invert ? pct <= warn   : pct >= warn
@@ -105,7 +105,7 @@ function Bar({ pct, warn = 70, danger = 85, invert = false }: {
     ? 'linear-gradient(90deg,#ef4444,#dc2626)'
     : isWarn
     ? 'linear-gradient(90deg,#f97316,#ea580c)'
-    : 'linear-gradient(90deg,#6366f1,#8b5cf6)'
+    : `linear-gradient(90deg,${accent}99,${accent})`
   return (
     <div style={{ height: 5, background: 'rgba(255,255,255,0.09)', borderRadius: 3, overflow: 'hidden' }}>
       <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color,
@@ -114,9 +114,9 @@ function Bar({ pct, warn = 70, danger = 85, invert = false }: {
   )
 }
 
-function MetricRow({ label, value, sub, pct, warn, danger, invert }: {
+function MetricRow({ label, value, sub, pct, warn, danger, invert, accent }: {
   label: string; value: string; sub?: string
-  pct?: number; warn?: number; danger?: number; invert?: boolean
+  pct?: number; warn?: number; danger?: number; invert?: boolean; accent: string
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -124,7 +124,7 @@ function MetricRow({ label, value, sub, pct, warn, danger, invert }: {
         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>{label}</span>
         <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
       </div>
-      {pct !== undefined && <Bar pct={pct} warn={warn} danger={danger} invert={invert} />}
+      {pct !== undefined && <Bar pct={pct} warn={warn} danger={danger} invert={invert} accent={accent} />}
       {sub && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)' }}>{sub}</span>}
     </div>
   )
@@ -212,7 +212,7 @@ export default function Home({ snap, totalFreed, fdaGranted, onNavigate, theme }
                 {snap ? `${fmtBytes(snap.disk.usedBytes)} of ${fmtBytes(snap.disk.totalBytes)} used` : ''}
               </span>
             </div>
-            <Bar pct={diskUsedPct} warn={70} danger={85} />
+            <Bar pct={diskUsedPct} warn={80} danger={90} accent={healthColor} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.40)' }}>
                 {snap ? `${fmtBytes(snap.disk.freeBytes)} free` : ''}
@@ -277,13 +277,13 @@ export default function Home({ snap, totalFreed, fdaGranted, onNavigate, theme }
             {snap ? (
               <>
                 <MetricRow label="Memory Pressure" value={`${snap.memory.pressurePercent}%`}
-                  pct={snap.memory.pressurePercent} warn={60} danger={80} />
+                  pct={snap.memory.pressurePercent} warn={60} danger={80} accent={theme.accent} />
                 <MetricRow label="CPU Load" value={`${snap.cpu.loadPercent}%`}
-                  pct={snap.cpu.loadPercent} warn={60} danger={80} />
+                  pct={snap.cpu.loadPercent} warn={60} danger={80} accent={theme.accent} />
                 <MetricRow label="Battery" value={`${snap.battery.percent}%`}
                   sub={snap.battery.fullyCharged ? 'Fully charged'
                     : snap.battery.charging ? 'Charging' : 'On battery'}
-                  pct={snap.battery.percent} warn={25} danger={10} invert />
+                  pct={snap.battery.percent} warn={25} danger={10} invert accent={theme.accent} />
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '2px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
