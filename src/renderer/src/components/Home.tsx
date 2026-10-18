@@ -23,60 +23,117 @@ const HEALTH: Record<string, { color: string; glow: string }> = {
 
 function MacHero({ score }: { score: string }) {
   const { color, glow } = HEALTH[score] ?? HEALTH.Excellent
-  const { onMouseMove, onMouseLeave, tiltTransform, tiltTransition } = useTilt(22)
+  // Expose raw tilt values so we can build a custom transform with tighter perspective + lift
+  const { tilt, isResting, onMouseMove, onMouseLeave, tiltTransition } = useTilt(32)
+  const transform = isResting
+    ? 'perspective(450px) rotateX(0deg) rotateY(0deg) translateZ(0px)'
+    : `perspective(450px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateZ(10px)`
 
   return (
     <div
       onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
-      style={{ display: 'flex', justifyContent: 'center', alignItems: 'center',
-        transform: tiltTransform, transition: tiltTransition, cursor: 'default' }}>
-      <div style={{ position: 'relative', width: 240, height: 210 }}>
-        <div style={{ position: 'absolute', inset: -24, borderRadius: '50%',
-          background: `radial-gradient(circle, ${glow} 0%, transparent 65%)`,
-          transition: 'background 0.6s ease' }} />
-        <svg width="240" height="210" viewBox="0 0 240 210" fill="none" style={{ position: 'relative', zIndex: 1 }}>
-          <defs>
-            <linearGradient id="hLid" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1e2d4e"/><stop offset="100%" stopColor="#0a1628"/>
-            </linearGradient>
-            <linearGradient id="hScreen" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#1e3a6e" stopOpacity="0.9"/>
-              <stop offset="100%" stopColor="#0e4a5e" stopOpacity="0.7"/>
-            </linearGradient>
-            <linearGradient id="hBase" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1a2540"/><stop offset="100%" stopColor="#0e1a30"/>
-            </linearGradient>
-            <filter id="hGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="4" result="b"/>
-              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
-          <ellipse cx="120" cy="112" rx="82" ry="72" fill="none"
-            stroke={color} strokeWidth="1.5" opacity="0.45" filter="url(#hGlow)"/>
-          <ellipse cx="120" cy="112" rx="66" ry="56" fill="none"
-            stroke={color} strokeWidth="0.8" opacity="0.25"/>
-          <rect x="32" y="22" width="176" height="118" rx="10"
-            fill="url(#hLid)" stroke="rgba(255,255,255,0.10)" strokeWidth="1"/>
-          <rect x="40" y="30" width="160" height="102" rx="5" fill="#050c1e"/>
-          <rect x="46" y="36" width="148" height="90" rx="3" fill="url(#hScreen)"/>
-          <rect x="46" y="36" width="148" height="16" rx="3" fill="rgba(255,255,255,0.04)"/>
-          <rect x="104" y="22" width="32" height="6" rx="3" fill="#050c1e"/>
-          <circle cx="120" cy="25" r="2.5" fill="rgba(255,255,255,0.12)"/>
-          <circle cx="120" cy="83" r="18" fill={color} opacity="0.12"/>
-          <circle cx="120" cy="83" r="10" fill="none" stroke={color} strokeWidth="2.5" opacity="0.8"/>
-          <circle cx="120" cy="83" r="3.5" fill={color} opacity="0.9"/>
-          <rect x="32" y="140" width="176" height="4" rx="2" fill="rgba(255,255,255,0.04)"/>
-          <rect x="20" y="144" width="200" height="34" rx="6"
-            fill="url(#hBase)" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
-          <rect x="36" y="152" width="56" height="4" rx="2" fill="rgba(255,255,255,0.05)"/>
-          <rect x="100" y="152" width="40" height="4" rx="2" fill="rgba(255,255,255,0.04)"/>
-          <rect x="148" y="152" width="56" height="4" rx="2" fill="rgba(255,255,255,0.05)"/>
-          <rect x="36" y="160" width="168" height="4" rx="2" fill="rgba(255,255,255,0.04)"/>
-          <rect x="90" y="166" width="60" height="8" rx="2.5"
-            fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
-          <rect x="20" y="178" width="200" height="4" rx="2" fill="rgba(0,0,0,0.35)"/>
-        </svg>
-      </div>
+      style={{
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
+        transform, transition: tiltTransition, cursor: 'default', willChange: 'transform',
+        filter: `drop-shadow(0 20px 40px ${glow}) drop-shadow(0 6px 16px rgba(0,0,0,0.45))`,
+      }}>
+      <svg width="260" height="220" viewBox="0 0 260 220" fill="none">
+        <defs>
+          {/* White-glass gradients — lit from top-left */}
+          <linearGradient id="macLid" x1="0" y1="0" x2="0.3" y2="1">
+            <stop offset="0%"   stopColor="rgba(255,255,255,0.22)"/>
+            <stop offset="100%" stopColor="rgba(255,255,255,0.08)"/>
+          </linearGradient>
+          <linearGradient id="macBase" x1="0" y1="0" x2="0.2" y2="1">
+            <stop offset="0%"   stopColor="rgba(255,255,255,0.18)"/>
+            <stop offset="100%" stopColor="rgba(255,255,255,0.07)"/>
+          </linearGradient>
+          <linearGradient id="macScreen" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#070e20"/>
+            <stop offset="100%" stopColor="#020810"/>
+          </linearGradient>
+          <radialGradient id="macScreenGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stopColor={color} stopOpacity="0.25"/>
+            <stop offset="100%" stopColor={color} stopOpacity="0"/>
+          </radialGradient>
+          <filter id="macIndicatorGlow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="4" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        {/* Ground shadow */}
+        <ellipse cx="130" cy="214" rx="96" ry="6" fill="rgba(0,0,0,0.28)"/>
+
+        {/* ── BASE / KEYBOARD ── */}
+        <rect x="8" y="158" width="244" height="46" rx="10" fill="url(#macBase)"
+          stroke="rgba(255,255,255,0.22)" strokeWidth="1"/>
+        {/* Top-edge highlight (brightest) */}
+        <rect x="8" y="158" width="244" height="2.5" rx="1.5" fill="rgba(255,255,255,0.50)"/>
+        {/* Left-edge highlight */}
+        <rect x="8" y="158" width="2" height="46" rx="1" fill="rgba(255,255,255,0.30)"/>
+        {/* Bottom shadow line */}
+        <rect x="14" y="200" width="232" height="3" rx="1.5" fill="rgba(0,0,0,0.18)"/>
+
+        {/* Keyboard row hints */}
+        <rect x="26" y="170" width="208" height="2.5" rx="1.5" fill="rgba(255,255,255,0.09)"/>
+        <rect x="26" y="177" width="208" height="2.5" rx="1.5" fill="rgba(255,255,255,0.07)"/>
+        <rect x="26" y="184" width="208" height="2.5" rx="1.5" fill="rgba(255,255,255,0.06)"/>
+
+        {/* Trackpad */}
+        <rect x="96" y="168" width="68" height="26" rx="5"
+          fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.16)" strokeWidth="0.8"/>
+        {/* Trackpad sheen */}
+        <rect x="96" y="168" width="68" height="6" rx="3" fill="rgba(255,255,255,0.06)"/>
+
+        {/* ── HINGE ── */}
+        <rect x="16" y="152" width="228" height="8" rx="3"
+          fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.14)" strokeWidth="0.5"/>
+        <rect x="16" y="152" width="228" height="2" rx="1" fill="rgba(255,255,255,0.22)"/>
+
+        {/* ── LID ── */}
+        <rect x="14" y="10" width="232" height="144" rx="14" fill="url(#macLid)"
+          stroke="rgba(255,255,255,0.28)" strokeWidth="1.5"/>
+        {/* Top-edge highlight (primary specular) */}
+        <rect x="14" y="10" width="232" height="3.5" rx="2" fill="rgba(255,255,255,0.55)"/>
+        {/* Left-edge highlight */}
+        <rect x="14" y="10" width="2" height="144" rx="1" fill="rgba(255,255,255,0.30)"/>
+        {/* Inner specular — subtle sheen across lid face */}
+        <rect x="20" y="16" width="220" height="40" rx="4"
+          fill="rgba(255,255,255,0.05)"/>
+
+        {/* Screen bezel */}
+        <rect x="22" y="18" width="216" height="128" rx="8" fill="rgba(0,0,0,0.55)"/>
+        {/* Screen panel */}
+        <rect x="27" y="23" width="206" height="118" rx="5" fill="url(#macScreen)"/>
+        {/* Screen health glow overlay */}
+        <rect x="27" y="23" width="206" height="118" rx="5" fill="url(#macScreenGlow)"/>
+        {/* Screen top sheen */}
+        <rect x="27" y="23" width="206" height="20" rx="4"
+          fill="rgba(255,255,255,0.03)"/>
+
+        {/* Notch */}
+        <rect x="112" y="10" width="36" height="9" rx="4.5" fill="rgba(0,0,0,0.55)"/>
+        {/* Camera */}
+        <circle cx="130" cy="14.5" r="3.2" fill="rgba(0,0,0,0.7)"
+          stroke="rgba(255,255,255,0.10)" strokeWidth="0.5"/>
+        <circle cx="130" cy="14.5" r="1.6" fill="rgba(60,60,80,0.9)"/>
+        <circle cx="129.2" cy="13.7" r="0.6" fill="rgba(255,255,255,0.35)"/>
+
+        {/* ── HEALTH INDICATOR on screen ── */}
+        {/* Outer pulse ring */}
+        <circle cx="130" cy="82" r="28" fill="none"
+          stroke={color} strokeWidth="0.8" opacity="0.25"/>
+        {/* Main ring */}
+        <circle cx="130" cy="82" r="18" fill="none"
+          stroke={color} strokeWidth="1.8" opacity="0.75" filter="url(#macIndicatorGlow)"/>
+        {/* Inner fill halo */}
+        <circle cx="130" cy="82" r="12" fill={color} opacity="0.10"/>
+        {/* Center dot */}
+        <circle cx="130" cy="82" r="6" fill={color} opacity="0.90" filter="url(#macIndicatorGlow)"/>
+        {/* Specular on center dot */}
+        <circle cx="128.5" cy="80.5" r="2" fill="rgba(255,255,255,0.70)"/>
+      </svg>
     </div>
   )
 }
