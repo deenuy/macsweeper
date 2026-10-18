@@ -9,7 +9,7 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { id: 'dashboard',  label: 'Smart Care',    Icon: IconSmartCare },
+  { id: 'dashboard',  label: 'Mac Health',    Icon: IconSmartCare },
   { id: 'junk',       label: 'Cleanup',       Icon: IconCleanup },
   { id: 'duplicates', label: 'Duplicates',    Icon: IconDuplicates },
   { id: 'space-lens', label: 'Space Lens',    Icon: IconSpaceLens },

@@ -156,7 +156,8 @@ export function registerIpcHandlers(): void {
 
     const result: Record<string, FileItem[]> = {}
     for (let i = 0; i < keys.length; i++) {
-      result[keys[i]] = settled[i].status === 'fulfilled' ? settled[i].value as FileItem[] : []
+      const r = settled[i]
+      result[keys[i]] = r.status === 'fulfilled' ? r.value as FileItem[] : []
     }
 
     const allItems = Object.values(result).flat()
@@ -250,7 +251,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('db:getIgnored',     async () => getIgnoredPaths())
 
   ipcMain.handle('shell:openInFinder', async (_, filePath: string) => {
-    shell.showItemInFinder(filePath)
+    shell.showItemInFolder(filePath)
   })
 
   ipcMain.handle('shell:openPath', async (_, filePath: string) => {

@@ -1,12 +1,43 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 out/
 dist/
-logs/
+
+# Electron-builder caches
 .pids/
+
+# Logs
+logs/
 *.log
+
+# macOS metadata
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment / secrets
 .env
 .env.*
 !.env.example
+
+# Notarization resources (user-supplied, not committed)
 resources/icon.icns
 resources/dmg-background.png
+
+# TypeScript incremental build info
+tsconfig.web.tsbuildinfo
+tsconfig.*.tsbuildinfo
+
+# IDE directories
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# JetBrains eval
+.jbeval/
+
+# Screenshots / local assets not part of the release
+macsweeper.png

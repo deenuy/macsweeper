@@ -28,7 +28,7 @@ export default function JunkCleaner({ theme }: Props) {
   const [categories, setCategories] = useState<Record<ScanCategory, CategoryState>>(
     Object.fromEntries(
       CATEGORIES.map(c => [c.id, { items: [], size: 0, found: 0, status: 'pending' }])
-    ) as Record<ScanCategory, CategoryState>
+    ) as unknown as Record<ScanCategory, CategoryState>
   )
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [activeCategory, setActiveCategory] = useState<ScanCategory>('user-cache')
@@ -57,7 +57,7 @@ export default function JunkCleaner({ theme }: Props) {
     setCategories(
       Object.fromEntries(
         CATEGORIES.map(c => [c.id, { items: [], size: 0, found: 0, status: 'scanning' }])
-      ) as Record<ScanCategory, CategoryState>
+      ) as unknown as Record<ScanCategory, CategoryState>
     )
     try {
       const result = await window.electron.scanAll()

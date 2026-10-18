@@ -1,6 +1,6 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
-  "include": ["src/renderer/src/**/*", "src/shared/**/*"],
+  "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/index.ts"],
   "compilerOptions": {
     "composite": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

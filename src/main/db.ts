@@ -7,7 +7,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import type { FileItem, DuplicateGroup } from '../shared/types'
+import type { FileItem } from '../shared/types'
 
 let db: Database.Database | null = null
 

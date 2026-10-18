@@ -124,9 +124,29 @@ function getNetworkInfo(): SystemSnapshot['network'] {
 function getConnectedDevices(): SystemSnapshot['connectedDevices'] {
   const devices: SystemSnapshot['connectedDevices'] = []
   try {
+    const fsmod = require('fs') as typeof import('fs')
+    const rootDev = statSync('/').dev
+
+    // Collect disk-image mount points so we can exclude DMG mounts.
+    const dmgPaths = new Set<string>()
+    try {
+      const hdiOut = run('hdiutil info 2>/dev/null', 3000)
+      for (const m of hdiOut.matchAll(/\s+(\/Volumes\/[^\n]+)/g)) {
+        dmgPaths.add(m[1].trim())
+      }
+    } catch {}
+
     for (const name of readdirSync('/Volumes')) {
       if (name.startsWith('.') || name === 'Macintosh HD') continue
-      try { statSync(`/Volumes/${name}`); devices.push({ name, type: 'disk', info: '', path: `/Volumes/${name}` }) } catch {}
+      const volPath = `/Volumes/${name}`
+      try {
+        const lstat = fsmod.lstatSync(volPath)
+        if (lstat.isSymbolicLink()) continue   // skip Home-dir symlinks
+        const st = statSync(volPath)
+        if (st.dev === rootDev) continue       // same APFS container as root
+        if (dmgPaths.has(volPath)) continue    // disk image mount (DMG)
+        devices.push({ name, type: 'disk', info: '', path: volPath })
+      } catch {}
     }
   } catch {}
   return devices
