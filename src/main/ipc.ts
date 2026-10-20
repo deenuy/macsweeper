@@ -1,4 +1,8 @@
 import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
+import {
+  scanInstalledApps, getAppLeftovers, uninstallApp,
+  checkAppUpdates, scanOrphanedLeftovers
+} from './apps-scanner'
 import { hasFullDiskAccess } from './permissions'
 import { getSystemSnapshot } from './system-stats'
 import {
@@ -288,6 +292,59 @@ export function registerIpcHandlers(): void {
   })
 
   // ── Gmail OAuth & API ────────────────────────────────────────────────────────
+
+  // ── Applications: uninstaller / updater / leftovers ─────────────────────────
+
+  ipcMain.handle('apps:scan', async () => {
+    const win = getFocusedWindow()
+    return scanInstalledApps(win)
+  })
+
+  ipcMain.handle('apps:leftovers', async (_, bundleId: string, appName: string) => {
+    return getAppLeftovers(bundleId, appName)
+  })
+
+  ipcMain.handle('apps:uninstall', async (event, appPath: string, bundleId: string, appName: string, removeLeftovers: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { response } = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      title: 'Uninstall Application',
+      message: `Move "${appName}" to Trash?`,
+      detail: removeLeftovers
+        ? 'The app and all its associated files (caches, preferences, containers) will be moved to Trash.'
+        : 'The app bundle will be moved to Trash. Associated files will remain.',
+      buttons: ['Move to Trash', 'Cancel'],
+      defaultId: 0, cancelId: 1
+    })
+    if (response === 1) return { trashed: [], failed: [], cancelled: true }
+    return uninstallApp(appPath, bundleId, appName, removeLeftovers)
+  })
+
+  ipcMain.handle('apps:checkUpdates', async (_, apps: import('../shared/types').InstalledApp[]) => {
+    const win = getFocusedWindow()
+    return checkAppUpdates(apps, win)
+  })
+
+  ipcMain.handle('apps:scanLeftovers', async () => {
+    const win = getFocusedWindow()
+    return scanOrphanedLeftovers(win)
+  })
+
+  ipcMain.handle('apps:cleanLeftovers', async (event, files: import('../shared/types').FileItem[]) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const totalSize = files.reduce((a, f) => a + f.size, 0)
+    const sizeMB = (totalSize / 1024 / 1024).toFixed(1)
+    const { response } = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      title: 'Remove Leftovers',
+      message: `Move ${files.length} leftover files to Trash?`,
+      detail: `${sizeMB} MB of orphaned files will be moved to Trash.`,
+      buttons: ['Move to Trash', 'Cancel'],
+      defaultId: 0, cancelId: 1
+    })
+    if (response === 1) return { cleaned: 0, totalSize: 0, failed: [], cancelled: true }
+    return moveToTrash(files)
+  })
 
   ipcMain.handle('gmail:hasCredentials', () => hasCredentials())
   ipcMain.handle('gmail:credentialsPath', () => getCredentialsPath())

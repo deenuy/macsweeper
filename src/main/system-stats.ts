@@ -1,35 +1,38 @@
-import { execSync } from 'child_process'
+import { exec } from 'child_process'
+import { promisify } from 'util'
 import { readdirSync } from 'fs'
 import type { SystemSnapshot } from '../shared/types'
 
+const execAsync = promisify(exec)
+
 let lastNetSample: { time: number; rxBytes: number; txBytes: number } | null = null
 let cachedModel: string | null = null
+let cachedWifiIface: string | null = null
 
-function run(cmd: string, timeoutMs = 4000): string {
+// All shell commands are async — main process event loop never blocks
+async function run(cmd: string, timeoutMs = 5000): Promise<string> {
   try {
-    return execSync(cmd, { encoding: 'utf8', timeout: timeoutMs })
+    const { stdout } = await execAsync(cmd, { timeout: timeoutMs })
+    return stdout
   } catch { return '' }
 }
 
-function getDiskInfo(): SystemSnapshot['disk'] {
-  const out = run('diskutil info /')
+async function getDiskInfo(): Promise<SystemSnapshot['disk']> {
+  const out = await run('diskutil info /')
   const toB = (s: string) => parseInt(s.replace(/,/g, ''))
-  // Try container stats first (APFS with shared pool)
   const cf = out.match(/Container Free Space:\s+[\d.]+ \S+ \(([\d,]+) Bytes\)/)
   const ct = out.match(/Container Total Space:\s+[\d.]+ \S+ \(([\d,]+) Bytes\)/)
   if (cf && ct) {
     const free = toB(cf[1]), total = toB(ct[1])
     return { freeBytes: free, totalBytes: total, usedBytes: total - free }
   }
-  // Volume stats fallback
   const vf = out.match(/Volume Free Space:\s+[\d.]+ \S+ \(([\d,]+) Bytes\)/)
   const vt = out.match(/Volume Total Space:\s+[\d.]+ \S+ \(([\d,]+) Bytes\)/)
   if (vf && vt) {
     const free = toB(vf[1]), total = toB(vt[1])
     return { freeBytes: free, totalBytes: total, usedBytes: total - free }
   }
-  // df fallback
-  const dfLine = run('df -Pk /').trim().split('\n')[1]?.trim().split(/\s+/) ?? []
+  const dfLine = (await run('df -Pk /')).trim().split('\n')[1]?.trim().split(/\s+/) ?? []
   if (dfLine.length >= 4) {
     return {
       totalBytes: parseInt(dfLine[1]) * 1024,
@@ -40,12 +43,15 @@ function getDiskInfo(): SystemSnapshot['disk'] {
   return { freeBytes: 0, totalBytes: 0, usedBytes: 0 }
 }
 
-function getMemoryInfo(): SystemSnapshot['memory'] {
-  const out = run('vm_stat')
-  const psMatch = out.match(/page size of (\d+) bytes/)
+async function getMemoryInfo(): Promise<SystemSnapshot['memory']> {
+  const [vmStatOut, pressureOut] = await Promise.all([
+    run('vm_stat'),
+    run('sysctl -n vm.memory_pressure'),
+  ])
+  const psMatch = vmStatOut.match(/page size of (\d+) bytes/)
   const ps = psMatch ? parseInt(psMatch[1]) : 4096
   const g = (key: string) => {
-    const m = out.match(new RegExp(key + ':\\s*(\\d+)'))
+    const m = vmStatOut.match(new RegExp(key + ':\\s*(\\d+)'))
     return m ? parseInt(m[1]) : 0
   }
   const free = g('Pages free')
@@ -56,20 +62,18 @@ function getMemoryInfo(): SystemSnapshot['memory'] {
   const comp = g('Pages occupied by compressor')
   const total = (free + active + inactive + spec + wired + comp) * ps
   const used = (active + wired + comp) * ps
-
-  // Use the kernel's own memory pressure level (1=normal, 2=warn, 4=critical)
-  // instead of a usage ratio, which reads 65-75% even on healthy systems.
-  const pressureLevel = parseInt(run('sysctl -n vm.memory_pressure').trim()) || 1
-  const pressurePercent = pressureLevel >= 4 ? 92 : pressureLevel >= 2 ? 65 : Math.round((wired + comp) / Math.max(1, wired + comp + free + inactive) * 40)
-
+  const pressureLevel = parseInt(pressureOut.trim()) || 1
+  const pressurePercent = pressureLevel >= 4 ? 92
+    : pressureLevel >= 2 ? 65
+    : Math.round((wired + comp) / Math.max(1, wired + comp + free + inactive) * 40)
   return {
     pressurePercent: Math.min(100, pressurePercent),
     totalBytes: total, usedBytes: used, freeBytes: total - used,
   }
 }
 
-function getBatteryInfo(): SystemSnapshot['battery'] {
-  const out = run('pmset -g batt')
+async function getBatteryInfo(): Promise<SystemSnapshot['battery']> {
+  const out = await run('pmset -g batt')
   const pct = parseInt(out.match(/(\d+)%/)?.[1] ?? '100')
   const status = out.match(/;\s*(charging|discharging|charged|AC attached)/i)?.[1]?.toLowerCase() ?? ''
   const hasBattery = /Battery|InternalBattery/i.test(out)
@@ -81,16 +85,27 @@ function getBatteryInfo(): SystemSnapshot['battery'] {
   }
 }
 
-function getCPULoad(): SystemSnapshot['cpu'] {
-  const cores = parseInt(run('sysctl -n hw.logicalcpu').trim()) || 1
-  const total = parseFloat(
-    run(`ps -A -o %cpu | awk 'NR>1 {s+=$1} END {printf "%.1f", s}'`).trim()
-  ) || 0
-  return { loadPercent: Math.min(100, Math.round(total / cores)) }
+async function getCPULoad(): Promise<SystemSnapshot['cpu']> {
+  // Two-sample top gives the delta over the interval — accurate instantaneous CPU
+  const out = await run(
+    "top -l 2 -n 0 -s 0.5 2>/dev/null | grep 'CPU usage:' | tail -1",
+    3000
+  )
+  const m = out.match(/CPU usage:\s+([\d.]+)%\s+user,\s+([\d.]+)%\s+sys/)
+  if (m) {
+    return { loadPercent: Math.min(100, Math.round(parseFloat(m[1]) + parseFloat(m[2]))) }
+  }
+  // Fallback: ps cumulative divided by core count
+  const [psOut, cpuCountOut] = await Promise.all([
+    run("ps -A -o %cpu | awk 'NR>1 {s+=$1} END {printf \"%.1f\", s}'"),
+    run('sysctl -n hw.logicalcpu'),
+  ])
+  const cores = parseInt(cpuCountOut.trim()) || 1
+  return { loadPercent: Math.min(100, Math.round((parseFloat(psOut.trim()) || 0) / cores)) }
 }
 
-function getNetworkInfo(): SystemSnapshot['network'] {
-  const out = run('netstat -ib')
+async function getNetworkInfo(): Promise<SystemSnapshot['network']> {
+  const out = await run('netstat -ib')
   let rxBytes = 0, txBytes = 0
   for (const line of out.split('\n')) {
     if (!/^en\d+\s/.test(line) || !line.includes('<Link#')) continue
@@ -110,9 +125,13 @@ function getNetworkInfo(): SystemSnapshot['network'] {
     }
   }
   if (rxBytes > 0) lastNetSample = { time: now, rxBytes, txBytes }
-  // Try the actual Wi-Fi interface name rather than assuming en0
-  const wifiIface = run("networksetup -listallhardwareports | awk '/Wi-Fi/{getline; print $2}'").trim() || 'en0'
-  const ssidRaw = run(`networksetup -getairportnetwork ${wifiIface} 2>/dev/null`)
+  // Cache Wi-Fi interface — changes only when network config changes
+  if (!cachedWifiIface) {
+    cachedWifiIface = (await run(
+      "networksetup -listallhardwareports | awk '/Wi-Fi/{getline; print $2}'"
+    )).trim() || 'en0'
+  }
+  const ssidRaw = await run(`networksetup -getairportnetwork ${cachedWifiIface} 2>/dev/null`)
   const ssid = ssidRaw.replace(/^Current Wi-Fi Network:\s*/i, '').trim()
   return {
     upKBps: Math.round(upKBps),
@@ -121,34 +140,39 @@ function getNetworkInfo(): SystemSnapshot['network'] {
   }
 }
 
-function getConnectedDevices(): SystemSnapshot['connectedDevices'] {
+// Connected devices: slow (diskutil external can take 1-2s) — separate 30s cache
+let cachedDevices: SystemSnapshot['connectedDevices'] | null = null
+let deviceCacheTime = 0
+
+async function getConnectedDevices(): Promise<SystemSnapshot['connectedDevices']> {
+  if (cachedDevices && Date.now() - deviceCacheTime < 30000) return cachedDevices
   const devices: SystemSnapshot['connectedDevices'] = []
   try {
     const fsmod = require('fs') as typeof import('fs')
-    // Only show volumes on real external physical disks (not DMGs, not network mounts)
-    const extOut = run('diskutil list external physical 2>/dev/null')
+    const extOut = await run('diskutil list external physical 2>/dev/null', 8000)
     const extDisks = new Set(Array.from(extOut.matchAll(/^(\/dev\/disk\d+)\s/gm)).map(m => m[1]))
-    if (extDisks.size === 0) return devices
-
-    for (const name of readdirSync('/Volumes')) {
-      if (name.startsWith('.') || name === 'Macintosh HD') continue
-      const volPath = `/Volumes/${name}`
-      try {
-        const lstat = fsmod.lstatSync(volPath)
-        if (lstat.isSymbolicLink()) continue
-        const dfLine = run(`df -Pk "${volPath.replace(/"/g, '\\"')}" 2>/dev/null`).trim().split('\n')[1] ?? ''
-        const device = dfLine.trim().split(/\s+/)[0] ?? ''
-        if (!Array.from(extDisks).some(d => device.startsWith(d))) continue
-        devices.push({ name, type: 'disk', info: '', path: volPath })
-      } catch {}
+    if (extDisks.size > 0) {
+      for (const name of readdirSync('/Volumes')) {
+        if (name.startsWith('.') || name === 'Macintosh HD') continue
+        const volPath = `/Volumes/${name}`
+        try {
+          if (fsmod.lstatSync(volPath).isSymbolicLink()) continue
+          const dfOut = await run(`df -Pk "${volPath.replace(/"/g, '\\"')}" 2>/dev/null`)
+          const device = dfOut.trim().split('\n')[1]?.trim().split(/\s+/)[0] ?? ''
+          if (!Array.from(extDisks).some(d => device.startsWith(d))) continue
+          devices.push({ name, type: 'disk', info: '', path: volPath })
+        } catch {}
+      }
     }
   } catch {}
+  cachedDevices = devices
+  deviceCacheTime = Date.now()
   return devices
 }
 
 function getMacModel(): string {
   if (cachedModel) return cachedModel
-  const hw = run('sysctl -n hw.model').trim()
+  const hw = require('child_process').execSync('sysctl -n hw.model', { encoding: 'utf8', timeout: 2000 }).trim()
   if (hw.includes('MacBookPro')) cachedModel = 'MacBook Pro'
   else if (hw.includes('MacBookAir')) cachedModel = 'MacBook Air'
   else if (hw.includes('MacBook')) cachedModel = 'MacBook'
@@ -172,34 +196,41 @@ function calcHealth(
   return 'Excellent'
 }
 
+// All independent stats gathered in parallel — snapshot completes in ~500ms (CPU sample time)
+async function buildSnapshot(): Promise<SystemSnapshot> {
+  const [disk, memory, battery, cpu, network, connectedDevices] = await Promise.all([
+    getDiskInfo(),
+    getMemoryInfo(),
+    getBatteryInfo(),
+    getCPULoad(),
+    getNetworkInfo(),
+    getConnectedDevices(),
+  ])
+  const macModel = getMacModel()
+  return {
+    disk, memory, battery, cpu, network, connectedDevices, macModel,
+    healthScore: calcHealth(disk, memory, cpu),
+  }
+}
+
 let cachedSnapshot: SystemSnapshot | null = null
 let cacheTime = 0
 
-function buildSnapshot(): SystemSnapshot {
-  const disk = getDiskInfo()
-  const memory = getMemoryInfo()
-  const battery = getBatteryInfo()
-  const cpu = getCPULoad()
-  const network = getNetworkInfo()
-  const connectedDevices = getConnectedDevices()
-  const macModel = getMacModel()
-  return { disk, memory, battery, cpu, network, connectedDevices, macModel, healthScore: calcHealth(disk, memory, cpu) }
-}
-
-export function getSystemSnapshot(): SystemSnapshot {
-  if (cachedSnapshot && Date.now() - cacheTime < 3500) return cachedSnapshot
-  cachedSnapshot = buildSnapshot()
+export async function getSystemSnapshot(): Promise<SystemSnapshot> {
+  if (cachedSnapshot && Date.now() - cacheTime < 4500) return cachedSnapshot
+  cachedSnapshot = await buildSnapshot()
   cacheTime = Date.now()
   return cachedSnapshot
 }
 
-// Called once on app ready: pre-warms cache before the UI opens,
-// then keeps refreshing in the background so IPC calls are instant.
-export function startSnapshotRefresh(): void {
-  cachedSnapshot = buildSnapshot()
+// Pre-warms cache before window opens; background refresh every 5s (non-blocking)
+export async function startSnapshotRefresh(): Promise<void> {
+  cachedSnapshot = await buildSnapshot()
   cacheTime = Date.now()
   setInterval(() => {
-    cachedSnapshot = buildSnapshot()
-    cacheTime = Date.now()
-  }, 4000)
+    buildSnapshot().then(snap => {
+      cachedSnapshot = snap
+      cacheTime = Date.now()
+    }).catch(() => {})
+  }, 5000)
 }

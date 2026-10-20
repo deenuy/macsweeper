@@ -1,6 +1,6 @@
 import type { Page, PageTheme } from '../App'
 import type { DiskStats } from '../../../shared/types'
-import { IconSmartCare, IconCleanup, IconDuplicates, IconSpaceLens, IconCloud, IconMail } from './icons'
+import { IconSmartCare, IconCleanup, IconDuplicates, IconSpaceLens, IconCloud, IconMail, IconApplications } from './icons'
 
 interface NavItem {
   id: Page
@@ -9,12 +9,13 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { id: 'dashboard',  label: 'Mac Health',    Icon: IconSmartCare },
-  { id: 'junk',       label: 'Cleanup',       Icon: IconCleanup },
-  { id: 'duplicates', label: 'Duplicates',    Icon: IconDuplicates },
-  { id: 'space-lens', label: 'Space Lens',    Icon: IconSpaceLens },
-  { id: 'cloud',      label: 'Cloud Cleanup', Icon: IconCloud },
-  { id: 'mail',       label: 'Mail Cleaner',  Icon: IconMail }
+  { id: 'dashboard',    label: 'Mac Health',    Icon: IconSmartCare },
+  { id: 'junk',         label: 'Cleanup',       Icon: IconCleanup },
+  { id: 'duplicates',   label: 'Duplicates',    Icon: IconDuplicates },
+  { id: 'applications', label: 'Applications',  Icon: IconApplications },
+  { id: 'space-lens',   label: 'Space Lens',    Icon: IconSpaceLens },
+  { id: 'cloud',        label: 'Cloud Cleanup', Icon: IconCloud },
+  { id: 'mail',         label: 'Mail Cleaner',  Icon: IconMail }
 ]
 
 function formatBytes(bytes: number): string {

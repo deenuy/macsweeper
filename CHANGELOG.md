@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## What's New in MacSweeper 1.1.0
+
+### New Features
+
+- Added Applications module with App Uninstaller, App Updater, and File Leftovers tabs, making it possible to fully remove apps and all associated traces from a single interface.
+- Added App Uninstaller that locates all leftover files for a selected app — preferences, caches, containers, group containers, launch agents, WebKit storage, and Spotlight-indexed traces — before moving everything to Trash.
+- Added App Updater that checks both Sparkle-powered apps (via their appcast feed) and Mac App Store apps (via the iTunes lookup API) and displays which apps have updates available.
+- Added File Leftovers scanner that finds orphaned support files, caches, and preferences left behind by apps that have already been removed, grouped by the originating app with per-file detail expansion.
+
+---
+
 ## What's New in MacSweeper 1.0.0
 
 ### New Features

@@ -7,11 +7,12 @@ import DuplicateFinder from './components/DuplicateFinder'
 import SpaceLens from './components/SpaceLens'
 import CloudCleanup from './components/CloudCleanup'
 import MailCleaner from './components/MailCleaner'
+import Applications from './components/Applications'
 import UpdateBanner from './components/UpdateBanner'
 import FDAPrompt from './components/FDAPrompt'
-import type { DiskStats } from '../../shared/types'
+import type { DiskStats, SystemSnapshot } from '../../shared/types'
 
-export type Page = 'dashboard' | 'junk' | 'duplicates' | 'space-lens' | 'cloud' | 'mail'
+export type Page = 'dashboard' | 'junk' | 'duplicates' | 'space-lens' | 'cloud' | 'mail' | 'applications'
 
 export interface PageTheme {
   gradient: string
@@ -56,28 +57,52 @@ export const PAGE_THEMES: Record<Page, PageTheme> = {
     accent: '#2EC4B6',
     navSelected: 'rgba(22, 122, 106, 0.55)',
     glow: 'rgba(46, 196, 182, 0.5)'
+  },
+  applications: {
+    gradient: 'radial-gradient(ellipse at 18% 65%, #1A4A8A 0%, #0D2548 32%, #040D1C 65%, #020810 100%)',
+    accent: '#4A90E2',
+    navSelected: 'rgba(26, 74, 138, 0.55)',
+    glow: 'rgba(74, 144, 226, 0.5)'
   }
 }
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
-  const [diskStats, setDiskStats] = useState<DiskStats | null>(null)
+  // Single snapshot source — polled here every 5s, passed down as props (no per-component polling)
+  const [snap, setSnap] = useState<SystemSnapshot | null>(null)
+  const [totalFreed, setTotalFreed] = useState(0)
   const [fdaGranted, setFdaGranted] = useState<boolean | null>(null)
   const theme = PAGE_THEMES[page]
 
   useEffect(() => {
-    window.electron.getDiskStats().then(setDiskStats).catch(console.error)
     window.electron.checkFDA().then(setFdaGranted).catch(() => setFdaGranted(true))
+    window.electron.getTotalFreed().then(setTotalFreed).catch(() => {})
+    const load = () => window.electron.getSystemSnapshot().then(setSnap).catch(() => {})
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
   }, [])
+
+  // Derive sidebar DiskStats from snapshot (correct APFS numbers, no extra IPC call)
+  const diskStats: DiskStats | null = snap ? {
+    totalBytes: snap.disk.totalBytes,
+    usedBytes: snap.disk.usedBytes,
+    freeBytes: snap.disk.freeBytes,
+    usedPercent: snap.disk.totalBytes > 0
+      ? Math.round((snap.disk.usedBytes / snap.disk.totalBytes) * 100)
+      : 0,
+  } : null
 
   const renderPage = () => {
     switch (page) {
-      case 'dashboard':    return <Home onNavigate={setPage} theme={theme} />
+      case 'dashboard':
+        return <Home snap={snap} totalFreed={totalFreed} fdaGranted={fdaGranted} onNavigate={setPage} theme={theme} />
       case 'junk':         return <JunkCleaner theme={theme} />
       case 'duplicates':   return <DuplicateFinder theme={theme} />
       case 'space-lens':   return <SpaceLens />
       case 'cloud':        return <CloudCleanup />
       case 'mail':         return <MailCleaner />
+      case 'applications': return <Applications theme={theme} />
     }
   }
 
@@ -104,7 +129,8 @@ export default function App() {
           padding: '32px 40px 32px 36px',
           position: 'relative'
         }}>
-          <div className="animate-fade-in" key={page}>
+          {/* No key={page} — avoids forcing full wrapper remount on navigation */}
+          <div className="animate-fade-in">
             {renderPage()}
           </div>
         </main>
