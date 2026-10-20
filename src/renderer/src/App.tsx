@@ -7,11 +7,12 @@ import DuplicateFinder from './components/DuplicateFinder'
 import SpaceLens from './components/SpaceLens'
 import CloudCleanup from './components/CloudCleanup'
 import MailCleaner from './components/MailCleaner'
+import Applications from './components/Applications'
 import UpdateBanner from './components/UpdateBanner'
 import FDAPrompt from './components/FDAPrompt'
 import type { DiskStats, SystemSnapshot } from '../../shared/types'
 
-export type Page = 'dashboard' | 'junk' | 'duplicates' | 'space-lens' | 'cloud' | 'mail'
+export type Page = 'dashboard' | 'junk' | 'duplicates' | 'space-lens' | 'cloud' | 'mail' | 'applications'
 
 export interface PageTheme {
   gradient: string
@@ -56,6 +57,12 @@ export const PAGE_THEMES: Record<Page, PageTheme> = {
     accent: '#2EC4B6',
     navSelected: 'rgba(22, 122, 106, 0.55)',
     glow: 'rgba(46, 196, 182, 0.5)'
+  },
+  applications: {
+    gradient: 'radial-gradient(ellipse at 18% 65%, #1A4A8A 0%, #0D2548 32%, #040D1C 65%, #020810 100%)',
+    accent: '#4A90E2',
+    navSelected: 'rgba(26, 74, 138, 0.55)',
+    glow: 'rgba(74, 144, 226, 0.5)'
   }
 }
 
@@ -95,6 +102,7 @@ export default function App() {
       case 'space-lens':   return <SpaceLens />
       case 'cloud':        return <CloudCleanup />
       case 'mail':         return <MailCleaner />
+      case 'applications': return <Applications theme={theme} />
     }
   }
 

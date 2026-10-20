@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import os from 'os'
-import type { FileItem, DiskStats, ScanProgress, TreeNode, FileMeta, VolumeInfo, SystemSnapshot } from '../shared/types'
+import type {
+  FileItem, DiskStats, ScanProgress, TreeNode, FileMeta, VolumeInfo, SystemSnapshot,
+  InstalledApp, AppUpdate, LeftoverGroup, UninstallResult
+} from '../shared/types'
 
 const electronAPI = {
   getDiskStats: (): Promise<DiskStats> => ipcRenderer.invoke('disk:stats'),
@@ -83,6 +86,37 @@ const electronAPI = {
   close: (): Promise<void> => ipcRenderer.invoke('window:close'),
 
   homeDir: os.homedir(),
+
+  // Applications: Uninstaller / Updater / Leftovers
+  apps: {
+    scan: (): Promise<InstalledApp[]> => ipcRenderer.invoke('apps:scan'),
+    leftovers: (bundleId: string, appName: string): Promise<FileItem[]> =>
+      ipcRenderer.invoke('apps:leftovers', bundleId, appName),
+    uninstall: (
+      appPath: string, bundleId: string, appName: string, removeLeftovers: boolean
+    ): Promise<UninstallResult & { cancelled?: boolean }> =>
+      ipcRenderer.invoke('apps:uninstall', appPath, bundleId, appName, removeLeftovers),
+    checkUpdates: (apps: InstalledApp[]): Promise<AppUpdate[]> =>
+      ipcRenderer.invoke('apps:checkUpdates', apps),
+    scanLeftovers: (): Promise<LeftoverGroup[]> => ipcRenderer.invoke('apps:scanLeftovers'),
+    cleanLeftovers: (files: FileItem[]) => ipcRenderer.invoke('apps:cleanLeftovers', files),
+
+    onScanProgress: (cb: (p: { phase: string; found: number }) => void) => {
+      const h = (_: Electron.IpcRendererEvent, p: { phase: string; found: number }) => cb(p)
+      ipcRenderer.on('apps:scanProgress', h)
+      return () => ipcRenderer.removeListener('apps:scanProgress', h)
+    },
+    onUpdateProgress: (cb: (p: { checked: number; total: number }) => void) => {
+      const h = (_: Electron.IpcRendererEvent, p: { checked: number; total: number }) => cb(p)
+      ipcRenderer.on('apps:updateProgress', h)
+      return () => ipcRenderer.removeListener('apps:updateProgress', h)
+    },
+    onLeftoverProgress: (cb: (p: { scanned: number; groups: number }) => void) => {
+      const h = (_: Electron.IpcRendererEvent, p: { scanned: number; groups: number }) => cb(p)
+      ipcRenderer.on('apps:leftoverProgress', h)
+      return () => ipcRenderer.removeListener('apps:leftoverProgress', h)
+    },
+  },
 
   // Gmail OAuth & API
   gmail: {

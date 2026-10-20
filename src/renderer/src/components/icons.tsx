@@ -53,6 +53,17 @@ export function IconMail({ size = 18 }: { size?: number }) {
   )
 }
 
+export function IconApplications({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="6" height="6" rx="1.5"/>
+      <rect x="10" y="2" width="6" height="6" rx="1.5"/>
+      <rect x="2" y="10" width="6" height="6" rx="1.5"/>
+      <path d="M13 10v6M10 13h6"/>
+    </svg>
+  )
+}
+
 export function IconBell({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">

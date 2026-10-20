@@ -238,6 +238,38 @@ export const CATEGORIES: CategoryMeta[] = [
   }
 ]
 
+// ── Applications module ──────────────────────────────────────────────────────
+
+export interface InstalledApp {
+  name: string
+  path: string
+  bundleId: string
+  version: string
+  size: number
+  isMAS: boolean
+  sparkleUrl?: string
+  lastUsed?: string
+}
+
+export interface AppUpdate {
+  app: InstalledApp
+  latestVersion: string
+  updateUrl?: string
+  source: 'sparkle' | 'mas'
+}
+
+export interface LeftoverGroup {
+  appName: string
+  bundleId: string
+  totalSize: number
+  files: FileItem[]
+}
+
+export interface UninstallResult {
+  trashed: string[]
+  failed: string[]
+}
+
 // Space Lens tree types (IPC-serialisable; must stay in sync with src/main/fs-utils.ts)
 export interface TreeNode {
   name: string
