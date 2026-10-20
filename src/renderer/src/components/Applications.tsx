@@ -1,705 +1,959 @@
-import { useState, useCallback } from 'react'
-import type { InstalledApp, AppUpdate, LeftoverGroup, FileItem } from '../../../shared/types'
+import { useState, useCallback, useRef } from 'react'
+import type { InstalledApp, AppUpdate, AppLeftoverGroup, FileItem } from '../../../shared/types'
 import type { PageTheme } from '../App'
 
-// ── Formatters ────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(bytes: number): string {
-  if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB'
-  if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB'
-  if (bytes >= 1e3) return (bytes / 1e3).toFixed(0) + ' KB'
-  return bytes + ' B'
+function fmt(n: number): string {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB'
+  if (n >= 1e6) return (n / 1e6).toFixed(0) + ' MB'
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + ' KB'
+  return n + ' B'
 }
 
-// ── Sub-tab IDs ───────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'uninstaller' | 'updater' | 'leftovers'
+type ScanPhase = 'idle' | 'scanning' | 'done'
+type AppTab = 'uninstaller' | 'updater' | 'leftovers'
 
 interface Props { theme: PageTheme }
 
-// ── Hero section (landing state) ──────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-function HeroLanding({ tab, onScan, scanning, theme }: {
-  tab: Tab
-  onScan: () => void
-  scanning: boolean
-  theme: PageTheme
-}) {
-  const meta: Record<Tab, { title: string; desc: string; icon: string }> = {
-    uninstaller: {
-      title: 'App Uninstaller',
-      desc: 'Fully remove apps and all their associated files — caches, preferences, containers, and launch agents.',
-      icon: '⊗'
+function SpinnerIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" className="animate-spin" style={{ display: 'inline-block' }}>
+      <circle cx="9" cy="9" r="6" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/>
+      <path d="M9 3a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function CheckIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none" style={{ display: 'inline-block' }}>
+      <path d="M2 7l4 4 6-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function HexIcon({ accent }: { accent: string }) {
+  return (
+    <svg width={200} height={220} viewBox="0 0 200 220" fill="none">
+      <defs>
+        <linearGradient id="hexGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={accent} stopOpacity="0.9"/>
+          <stop offset="100%" stopColor={accent} stopOpacity="0.3"/>
+        </linearGradient>
+        <filter id="hexGlow">
+          <feGaussianBlur stdDeviation="8" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      {/* Outer hex */}
+      <polygon
+        points="100,18 178,62 178,150 100,194 22,150 22,62"
+        fill={`url(#hexGrad)`}
+        opacity="0.18"
+        filter="url(#hexGlow)"
+      />
+      {/* Inner hex */}
+      <polygon
+        points="100,34 162,70 162,144 100,180 38,144 38,70"
+        fill={`url(#hexGrad)`}
+        opacity="0.32"
+      />
+      {/* App grid icon */}
+      <rect x="72" y="72" width="22" height="22" rx="4" fill="white" opacity="0.85"/>
+      <rect x="106" y="72" width="22" height="22" rx="4" fill="white" opacity="0.85"/>
+      <rect x="72" y="106" width="22" height="22" rx="4" fill="white" opacity="0.85"/>
+      {/* Plus in bottom-right quadrant */}
+      <path d="M117 110v14M110 117h14" stroke="white" strokeWidth="2.5" strokeLinecap="round" opacity="0.85"/>
+    </svg>
+  )
+}
+
+// ── Landing Page ──────────────────────────────────────────────────────────────
+
+function LandingPage({ onScan, accent }: { onScan: () => void; accent: string }) {
+  const features = [
+    {
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2.5 4h10M5 4V2.5A.5.5 0 0 1 5.5 2h4a.5.5 0 0 1 .5.5V4M3.5 4 4 12.5a.5.5 0 0 0 .5.5h6a.5.5 0 0 0 .5-.5L11.5 4M6 7v4M9 7v4"/>
+        </svg>
+      ),
+      label: 'App Uninstaller',
+      desc: 'Completely remove apps and all their leftover files',
     },
-    updater: {
-      title: 'App Updater',
-      desc: 'Check for updates across all installed apps — Sparkle-powered and Mac App Store apps alike.',
-      icon: '↑'
+    {
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7.5 2v4M7.5 9v4M2 7.5h11M5 4.5 7.5 2l2.5 2.5"/>
+        </svg>
+      ),
+      label: 'App Updater',
+      desc: 'Find apps with available Sparkle or App Store updates',
     },
-    leftovers: {
-      title: 'File Leftovers',
-      desc: 'Find orphaned support files, caches, and preferences left behind by apps you already removed.',
-      icon: '◎'
-    }
-  }
-  const m = meta[tab]
+    {
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 11h11M4 11V5.5L7.5 2 11 5.5V11M6 11V8h3v3"/>
+        </svg>
+      ),
+      label: 'File Leftovers',
+      desc: 'Remove orphaned caches, preferences and support files',
+    },
+  ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 24, padding: '0 40px' }}>
-      {/* Icon badge */}
-      <div style={{
-        width: 96, height: 96, borderRadius: 28,
-        background: `linear-gradient(135deg, ${theme.accent}33, ${theme.accent}11)`,
-        border: `1.5px solid ${theme.accent}44`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 36, backdropFilter: 'blur(12px)',
-        boxShadow: `0 8px 32px ${theme.glow}`
-      }}>
-        {m.icon}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 60, paddingTop: 24 }}>
+      {/* Hero icon */}
+      <div style={{ flexShrink: 0 }}>
+        <HexIcon accent={accent} />
       </div>
-      <div style={{ textAlign: 'center', maxWidth: 440 }}>
-        <h2 style={{ margin: '0 0 10px', fontSize: 28, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>
-          {m.title}
-        </h2>
-        <p style={{ margin: 0, fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.6 }}>
-          {m.desc}
+
+      {/* Right panel */}
+      <div style={{ flex: 1 }}>
+        <h1 style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 10 }}>
+          Applications
+        </h1>
+        <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 14, marginBottom: 36, lineHeight: 1.6 }}>
+          Take control of your applications. Uninstall, update or remove old application leftovers.
         </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 40 }}>
+          {features.map(f => (
+            <div key={f.label} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              padding: '13px 16px',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 12,
+            }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: `linear-gradient(135deg, ${accent}55, ${accent}22)`,
+                border: `1px solid ${accent}44`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: accent,
+                flexShrink: 0,
+              }}>
+                {f.icon}
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{f.label}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className="btn-primary"
+            onClick={onScan}
+            style={{
+              background: `linear-gradient(135deg, ${accent}, ${accent}AA)`,
+              fontSize: 15,
+              padding: '11px 32px',
+              borderRadius: 24,
+              fontWeight: 600,
+            }}
+          >
+            Scan
+          </button>
+        </div>
       </div>
-      <button
-        onClick={onScan}
-        disabled={scanning}
-        style={{
-          padding: '12px 36px', borderRadius: 50, border: 'none', cursor: scanning ? 'default' : 'pointer',
-          background: scanning ? 'rgba(255,255,255,0.1)' : `linear-gradient(135deg, ${theme.accent}, ${theme.accent}cc)`,
-          color: '#fff', fontSize: 15, fontWeight: 600,
-          boxShadow: scanning ? 'none' : `0 4px 20px ${theme.glow}`,
-          transition: 'all 0.2s ease', opacity: scanning ? 0.6 : 1
-        }}
-      >
-        {scanning ? 'Scanning…' : 'Scan'}
-      </button>
     </div>
   )
 }
 
-// ── App Uninstaller tab ───────────────────────────────────────────────────────
+// ── Scanning State ────────────────────────────────────────────────────────────
 
-function UninstallerTab({ theme }: { theme: PageTheme }) {
-  const [state, setState] = useState<'idle' | 'scanning' | 'done'>('idle')
-  const [apps, setApps] = useState<InstalledApp[]>([])
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [leftovers, setLeftovers] = useState<Map<string, FileItem[]>>(new Map())
-  const [loadingLeftovers, setLoadingLeftovers] = useState<Set<string>>(new Set())
-  const [removeLeftovers, setRemoveLeftovers] = useState(true)
-  const [working, setWorking] = useState(false)
+function ScanningView({ phase }: { phase: string }) {
+  const labels: Record<string, string> = {
+    apps: 'Scanning installed applications…',
+    leftovers: 'Looking for orphaned files…',
+    updates: 'Checking for updates…',
+    done: 'Finishing up…',
+  }
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '60vh',
+      gap: 20,
+    }}>
+      <SpinnerIcon size={36} />
+      <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
+        {labels[phase] ?? 'Scanning…'}
+      </p>
+    </div>
+  )
+}
+
+// ── Tab bar ───────────────────────────────────────────────────────────────────
+
+function TabBar({
+  active,
+  onChange,
+  counts,
+  accent,
+}: {
+  active: AppTab
+  onChange: (t: AppTab) => void
+  counts: { uninstaller: number; updater: number; leftovers: number }
+  accent: string
+}) {
+  const tabs: { id: AppTab; label: string; count: number }[] = [
+    { id: 'uninstaller', label: 'App Uninstaller', count: counts.uninstaller },
+    { id: 'updater',     label: 'App Updater',     count: counts.updater },
+    { id: 'leftovers',   label: 'File Leftovers',  count: counts.leftovers },
+  ]
+  return (
+    <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
+      {tabs.map(t => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          style={{
+            padding: '8px 18px',
+            borderRadius: 20,
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: active === t.id ? 600 : 400,
+            background: active === t.id ? `linear-gradient(135deg, ${accent}55, ${accent}22)` : 'rgba(255,255,255,0.07)',
+            color: active === t.id ? '#fff' : 'rgba(255,255,255,0.55)',
+            outline: active === t.id ? `1px solid ${accent}55` : '1px solid transparent',
+            transition: 'all 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+          }}
+        >
+          {t.label}
+          {t.count > 0 && (
+            <span style={{
+              fontSize: 10,
+              fontWeight: 700,
+              background: active === t.id ? accent : 'rgba(255,255,255,0.15)',
+              color: '#fff',
+              borderRadius: 10,
+              padding: '1px 6px',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {t.count}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── App Uninstaller Tab ───────────────────────────────────────────────────────
+
+function UninstallerTab({
+  apps,
+  accent,
+}: {
+  apps: InstalledApp[]
+  accent: string
+}) {
   const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<InstalledApp | null>(null)
+  const [leftovers, setLeftovers] = useState<FileItem[]>([])
+  const [loadingLeftovers, setLoadingLeftovers] = useState(false)
+  const [selectedLeftoverPaths, setSelectedLeftoverPaths] = useState<Set<string>>(new Set())
+  const [uninstallStatus, setUninstallStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
+  const [uninstallMsg, setUninstallMsg] = useState('')
 
-  const runScan = async () => {
-    setState('scanning')
-    setApps([])
-    setSelected(new Set())
-    setLeftovers(new Map())
+  const filtered = apps.filter(a =>
+    a.name.toLowerCase().includes(search.toLowerCase()) ||
+    a.bundleId.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const selectApp = async (app: InstalledApp) => {
+    setSelected(app)
+    setLeftovers([])
+    setSelectedLeftoverPaths(new Set())
+    setUninstallStatus('idle')
+    setUninstallMsg('')
+  }
+
+  const findLeftovers = async () => {
+    if (!selected) return
+    setLoadingLeftovers(true)
     try {
-      const result = await window.electron.apps.scan()
-      setApps(result)
-      setState('done')
-    } catch {
-      setState('idle')
+      const files = await window.electron.apps.leftovers(selected.bundleId, selected.name)
+      setLeftovers(files)
+      setSelectedLeftoverPaths(new Set(files.map(f => f.path)))
+    } finally {
+      setLoadingLeftovers(false)
     }
   }
 
-  const loadLeftovers = async (app: InstalledApp) => {
-    const key = app.bundleId
-    if (leftovers.has(key) || loadingLeftovers.has(key)) return
-    setLoadingLeftovers(prev => new Set(prev).add(key))
-    try {
-      const files = await window.electron.apps.leftovers(app.bundleId, app.name)
-      setLeftovers(prev => new Map(prev).set(key, files))
-    } catch { /* ok */ }
-    setLoadingLeftovers(prev => { const n = new Set(prev); n.delete(key); return n })
-  }
+  const toggleLeftover = useCallback((p: string) => {
+    setSelectedLeftoverPaths(prev => {
+      const next = new Set(prev)
+      if (next.has(p)) next.delete(p); else next.add(p)
+      return next
+    })
+  }, [])
 
-  const toggle = (app: InstalledApp) => {
-    const s = new Set(selected)
-    if (s.has(app.path)) s.delete(app.path)
-    else { s.add(app.path); loadLeftovers(app) }
-    setSelected(s)
-  }
+  const doUninstall = async () => {
+    if (!selected) return
+    setUninstallStatus('working')
+    const selectedFiles = leftovers.filter(f => selectedLeftoverPaths.has(f.path))
+    const removeLeftovers = selectedFiles.length > 0
 
-  const uninstall = async () => {
-    if (selected.size === 0) return
-    setWorking(true)
-    const toRemove = apps.filter(a => selected.has(a.path))
-    for (const app of toRemove) {
-      try {
-        const r = await window.electron.apps.uninstall(app.path, app.bundleId, app.name, removeLeftovers)
-        if (r.cancelled) continue
-        if (r.trashed.length > 0) {
-          setApps(prev => prev.filter(a => a.path !== app.path))
-          setSelected(prev => { const n = new Set(prev); n.delete(app.path); return n })
-        }
-      } catch { /* ok */ }
+    const result = await window.electron.apps.uninstall(
+      selected.path, selected.bundleId, selected.name, removeLeftovers
+    )
+    if (result.cancelled) {
+      setUninstallStatus('idle')
+      return
     }
-    setWorking(false)
-  }
-
-  const filtered = apps.filter(a => a.name.toLowerCase().includes(search.toLowerCase()))
-  const selectedApps = apps.filter(a => selected.has(a.path))
-  const selectedSize = selectedApps.reduce((t, a) => t + a.size, 0)
-  const selectedLeftoverSize = selectedApps.reduce((t, a) => {
-    const lf = leftovers.get(a.bundleId) ?? []
-    return t + lf.reduce((lt, f) => lt + f.size, 0)
-  }, 0)
-
-  if (state === 'idle' || state === 'scanning') {
-    return <HeroLanding tab="uninstaller" onScan={runScan} scanning={state === 'scanning'} theme={theme} />
+    if (result.trashed.length > 0) {
+      setUninstallStatus('done')
+      setUninstallMsg(`Moved ${result.trashed.length} items to Trash`)
+      setSelected(null)
+      setLeftovers([])
+    } else if (result.failed.length > 0) {
+      setUninstallStatus('error')
+      setUninstallMsg(`Failed to trash ${result.failed.length} items`)
+    }
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Search + controls */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search apps…"
-          style={{
-            flex: 1, padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)',
-            background: 'rgba(255,255,255,0.07)', color: '#fff', fontSize: 13,
-            outline: 'none'
-          }}
-        />
-        <button onClick={runScan} style={ghostBtn}>Rescan</button>
+    <div style={{ display: 'flex', gap: 14, height: '100%', minHeight: 0 }}>
+      {/* App list */}
+      <div style={{
+        width: 240,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 0,
+        background: 'rgba(0,0,0,0.22)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 14,
+        overflow: 'hidden',
+      }}>
+        {/* Search */}
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search apps…"
+            style={{
+              width: '100%',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: 8,
+              color: '#fff',
+              fontSize: 12,
+              padding: '6px 10px',
+              outline: 'none',
+            }}
+          />
+        </div>
+        {/* List */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {filtered.map(app => {
+            const isActive = selected?.bundleId === app.bundleId
+            return (
+              <button
+                key={app.bundleId}
+                onClick={() => selectApp(app)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  width: '100%',
+                  padding: '9px 12px',
+                  border: 'none',
+                  borderRadius: 0,
+                  cursor: 'pointer',
+                  background: isActive ? `${accent}22` : 'transparent',
+                  borderLeft: isActive ? `2px solid ${accent}` : '2px solid transparent',
+                  textAlign: 'left',
+                  transition: 'background 0.12s',
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 500, color: isActive ? '#fff' : 'rgba(255,255,255,0.80)' }}>
+                  {app.name}
+                </span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                  {app.version} · {fmt(app.size)}
+                </span>
+              </button>
+            )
+          })}
+          {filtered.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: 'rgba(255,255,255,0.30)', fontSize: 12 }}>
+              No apps found
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* App list */}
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {filtered.map(app => {
-          const isSelected = selected.has(app.path)
-          const lf = leftovers.get(app.bundleId)
-          const isLoadingLf = loadingLeftovers.has(app.bundleId)
-          const lfSize = lf?.reduce((t, f) => t + f.size, 0) ?? 0
-
-          return (
-            <div key={app.path} onClick={() => toggle(app)} style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px',
-              borderRadius: 12, cursor: 'pointer',
-              background: isSelected ? 'rgba(74,144,226,0.18)' : 'rgba(255,255,255,0.05)',
-              border: isSelected ? '1px solid rgba(74,144,226,0.4)' : '1px solid rgba(255,255,255,0.08)',
-              transition: 'all 0.15s ease'
-            }}>
-              <Checkbox checked={isSelected} accent={theme.accent} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {app.name}
+      {/* Detail panel */}
+      <div style={{
+        flex: 1,
+        background: 'rgba(0,0,0,0.22)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+        {!selected ? (
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(255,255,255,0.28)',
+            gap: 10,
+          }}>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', opacity: 0.5 }}>
+              <rect x="4" y="4" width="11" height="11" rx="2.5"/>
+              <rect x="17" y="4" width="11" height="11" rx="2.5"/>
+              <rect x="4" y="17" width="11" height="11" rx="2.5"/>
+              <path d="M22.5 17v11M17 22.5h11"/>
+            </svg>
+            <span style={{ fontSize: 13 }}>Select an app to uninstall</span>
+          </div>
+        ) : (
+          <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20, flex: 1, overflow: 'auto' }}>
+            {/* App header */}
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{selected.name}</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(255,255,255,0.08)', borderRadius: 6, color: 'rgba(255,255,255,0.6)' }}>
+                  v{selected.version}
+                </span>
+                <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(255,255,255,0.08)', borderRadius: 6, color: 'rgba(255,255,255,0.6)' }}>
+                  {fmt(selected.size)}
+                </span>
+                {selected.isMAS && (
+                  <span style={{ fontSize: 11, padding: '2px 8px', background: `${accent}22`, border: `1px solid ${accent}44`, borderRadius: 6, color: accent }}>
+                    Mac App Store
                   </span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
-                    v{app.version}
-                  </span>
-                  {app.isMAS && (
-                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(74,144,226,0.2)', color: '#4A90E2', flexShrink: 0 }}>
-                      MAS
-                    </span>
-                  )}
-                </div>
-                {isSelected && (
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                    {isLoadingLf ? 'Finding leftovers…' :
-                      lf ? (lf.length > 0 ? `${lf.length} leftover file${lf.length > 1 ? 's' : ''} · ${fmt(lfSize)}` : 'No leftovers found') :
-                      'Loading leftovers…'
-                    }
-                  </div>
                 )}
               </div>
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>{fmt(app.size)}</span>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.30)', marginTop: 6, fontFamily: 'monospace' }}>
+                {selected.bundleId}
+              </div>
             </div>
-          )
-        })}
-        {filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.35)', fontSize: 14 }}>
-            No apps found
+
+            {/* Leftovers section */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Associated Files</span>
+                {leftovers.length === 0 && (
+                  <button
+                    className="btn-secondary"
+                    style={{ fontSize: 11, padding: '5px 14px' }}
+                    onClick={findLeftovers}
+                    disabled={loadingLeftovers}
+                  >
+                    {loadingLeftovers ? <SpinnerIcon size={12} /> : 'Find Leftovers'}
+                  </button>
+                )}
+              </div>
+
+              {leftovers.length > 0 && (
+                <div style={{
+                  background: 'rgba(0,0,0,0.20)',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                }}>
+                  {leftovers.map(f => (
+                    <label
+                      key={f.path}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      }}
+                    >
+                      <div
+                        onClick={() => toggleLeftover(f.path)}
+                        style={{
+                          width: 15,
+                          height: 15,
+                          borderRadius: 4,
+                          border: `1.5px solid ${selectedLeftoverPaths.has(f.path) ? accent : 'rgba(255,255,255,0.25)'}`,
+                          background: selectedLeftoverPaths.has(f.path) ? accent : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {selectedLeftoverPaths.has(f.path) && <CheckIcon size={10} />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {f.name}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {f.path.replace(window.electron.homeDir, '~')}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', flexShrink: 0 }}>
+                        {fmt(f.size)}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {leftovers.length === 0 && !loadingLeftovers && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', padding: '8px 0' }}>
+                  Click "Find Leftovers" to scan for associated files in ~/Library
+                </div>
+              )}
+            </div>
+
+            {/* Status / Result */}
+            {uninstallStatus === 'done' && (
+              <div style={{ padding: '10px 14px', background: 'rgba(48,209,88,0.12)', border: '1px solid rgba(48,209,88,0.28)', borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckIcon size={13} />
+                {uninstallMsg}
+              </div>
+            )}
+            {uninstallStatus === 'error' && (
+              <div style={{ padding: '10px 14px', background: 'rgba(255,69,58,0.12)', border: '1px solid rgba(255,69,58,0.28)', borderRadius: 10, fontSize: 12 }}>
+                {uninstallMsg}
+              </div>
+            )}
+
+            {/* Uninstall button */}
+            <div style={{ marginTop: 'auto' }}>
+              <button
+                className="btn-danger"
+                onClick={doUninstall}
+                disabled={uninstallStatus === 'working'}
+                style={{ fontSize: 13, padding: '10px 22px' }}
+              >
+                {uninstallStatus === 'working' ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <SpinnerIcon size={14} /> Uninstalling…
+                  </span>
+                ) : (
+                  `Uninstall${selectedLeftoverPaths.size > 0 ? ' + Leftovers' : ''}`
+                )}
+              </button>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Footer action bar */}
-      {selected.size > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 16, padding: '14px 16px',
-          background: 'rgba(0,0,0,0.3)', borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)'
-        }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-              {selected.size} app{selected.size > 1 ? 's' : ''} selected
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
-              {fmt(selectedSize)} app{removeLeftovers && selectedLeftoverSize > 0 ? ` + ${fmt(selectedLeftoverSize)} leftovers` : ''}
-            </div>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
-            <input type="checkbox" checked={removeLeftovers} onChange={e => setRemoveLeftovers(e.target.checked)}
-              style={{ accentColor: theme.accent }} />
-            Remove leftovers
-          </label>
-          <button onClick={uninstall} disabled={working} style={{
-            padding: '9px 22px', borderRadius: 10, border: 'none', cursor: working ? 'default' : 'pointer',
-            background: working ? 'rgba(255,255,255,0.1)' : '#e53e3e',
-            color: '#fff', fontSize: 13, fontWeight: 600, opacity: working ? 0.6 : 1,
-            transition: 'opacity 0.2s'
-          }}>
-            {working ? 'Removing…' : 'Uninstall'}
-          </button>
-        </div>
-      )}
     </div>
   )
 }
 
-// ── App Updater tab ───────────────────────────────────────────────────────────
+// ── App Updater Tab ───────────────────────────────────────────────────────────
 
-function UpdaterTab({ theme }: { theme: PageTheme }) {
-  const [state, setState] = useState<'idle' | 'scanning-apps' | 'checking-updates' | 'done'>('idle')
-  const [updates, setUpdates] = useState<AppUpdate[]>([])
-  const [progress, setProgress] = useState({ checked: 0, total: 0 })
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-
-  const runScan = useCallback(async () => {
-    setState('scanning-apps')
-    setUpdates([])
-    setSelected(new Set())
-    try {
-      const allApps = await window.electron.apps.scan()
-      setState('checking-updates')
-      setProgress({ checked: 0, total: allApps.length })
-
-      const unsub = window.electron.apps.onUpdateProgress(p => setProgress(p))
-      try {
-        const found = await window.electron.apps.checkUpdates(allApps)
-        setUpdates(found)
-      } finally {
-        unsub()
-      }
-      setState('done')
-    } catch {
-      setState('idle')
-    }
-  }, [])
-
-  const toggle = (u: AppUpdate) => {
-    const s = new Set(selected)
-    if (s.has(u.app.path)) s.delete(u.app.path)
-    else s.add(u.app.path)
-    setSelected(s)
+function UpdaterTab({ updates, accent }: { updates: AppUpdate[]; accent: string }) {
+  const openAppStore = () => {
+    window.electron.openPath('macappstore://showUpdatesPage')
   }
 
-  const openUpdate = (u: AppUpdate) => {
-    if (u.updateUrl) window.electron.openPath(u.updateUrl)
-  }
-
-  if (state === 'idle') {
-    return <HeroLanding tab="updater" onScan={runScan} scanning={false} theme={theme} />
-  }
-
-  if (state === 'scanning-apps') {
-    return <ScanningIndicator label="Scanning installed apps…" theme={theme} />
-  }
-
-  if (state === 'checking-updates') {
-    const pct = progress.total > 0 ? Math.round((progress.checked / progress.total) * 100) : 0
+  if (updates.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 20 }}>
-        <div style={{ fontSize: 40 }}>↑</div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: '#fff' }}>Checking for updates…</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
-          {progress.checked} / {progress.total} apps checked
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 320,
+        gap: 14,
+        color: 'rgba(255,255,255,0.35)',
+      }}>
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block' }}>
+          <path d="M5 16l9 9 13-14"/>
+        </svg>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, marginBottom: 4 }}>All apps are up to date</div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>
+            Checked Sparkle-enabled apps. For Mac App Store apps, use Software Update.
+          </div>
         </div>
-        <ProgressBar pct={pct} accent={theme.accent} />
+        <button
+          className="btn-secondary"
+          style={{ fontSize: 12, padding: '7px 18px' }}
+          onClick={openAppStore}
+        >
+          Open App Store Updates
+        </button>
       </div>
     )
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>
-          {updates.length > 0 ? `${updates.length} update${updates.length > 1 ? 's' : ''} available` : 'All apps are up to date'}
-        </div>
-        <button onClick={runScan} style={ghostBtn}>Recheck</button>
+    <div style={{
+      background: 'rgba(0,0,0,0.22)',
+      border: '1px solid rgba(255,255,255,0.09)',
+      borderRadius: 14,
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 18px',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.50)' }}>
+          {updates.length} update{updates.length !== 1 ? 's' : ''} available
+        </span>
+        <button className="btn-secondary" style={{ fontSize: 11, padding: '5px 14px' }} onClick={openAppStore}>
+          Open App Store
+        </button>
       </div>
 
-      {updates.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.35)', fontSize: 14 }}>
-          ✓ All apps are up to date
+      {/* Rows */}
+      {updates.map(u => (
+        <div
+          key={u.bundleId}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '12px 18px',
+            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            gap: 14,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{u.appName}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{u.currentVersion}</span>
+              <span>→</span>
+              <span style={{ color: accent, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{u.latestVersion}</span>
+            </div>
+          </div>
+          {u.downloadUrl ? (
+            <button
+              className="btn-primary"
+              style={{ fontSize: 11, padding: '6px 16px', background: `linear-gradient(135deg, ${accent}, ${accent}AA)` }}
+              onClick={() => window.electron.openPath(u.downloadUrl!)}
+            >
+              Download
+            </button>
+          ) : u.isMAS ? (
+            <button
+              className="btn-secondary"
+              style={{ fontSize: 11, padding: '6px 16px' }}
+              onClick={openAppStore}
+            >
+              App Store
+            </button>
+          ) : null}
         </div>
-      ) : (
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {updates.map(u => {
-            const isSelected = selected.has(u.app.path)
-            return (
-              <div key={u.app.path} onClick={() => toggle(u)} style={{
-                display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px',
-                borderRadius: 12, cursor: 'pointer',
-                background: isSelected ? 'rgba(74,144,226,0.18)' : 'rgba(255,255,255,0.05)',
-                border: isSelected ? '1px solid rgba(74,144,226,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                transition: 'all 0.15s ease'
-              }}>
-                <Checkbox checked={isSelected} accent={theme.accent} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{u.app.name}</span>
-                    <span style={{ fontSize: 11, color: '#4A90E2', background: 'rgba(74,144,226,0.15)', padding: '1px 7px', borderRadius: 5 }}>
-                      {u.app.version} → {u.latestVersion}
-                    </span>
-                    {u.source === 'mas' && (
-                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(74,144,226,0.2)', color: '#4A90E2' }}>MAS</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                    {u.source === 'sparkle' ? 'In-app update available' : 'Mac App Store update available'}
-                  </div>
-                </div>
-                <button onClick={e => { e.stopPropagation(); openUpdate(u) }} style={{
-                  padding: '5px 14px', borderRadius: 8, border: `1px solid ${theme.accent}66`,
-                  background: 'transparent', color: theme.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  flexShrink: 0
-                }}>
-                  {u.source === 'mas' ? 'Open Store' : 'Update'}
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      ))}
     </div>
   )
 }
 
-// ── File Leftovers tab ────────────────────────────────────────────────────────
+// ── File Leftovers Tab ────────────────────────────────────────────────────────
 
-function LeftoversTab({ theme }: { theme: PageTheme }) {
-  const [state, setState] = useState<'idle' | 'scanning' | 'done'>('idle')
-  const [groups, setGroups] = useState<LeftoverGroup[]>([])
+function LeftoversTab({ groups, accent }: { groups: AppLeftoverGroup[]; accent: string }) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(groups.flatMap(g => g.paths)))
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [selected, setSelected] = useState<Set<string>>(new Set()) // file paths
-  const [working, setWorking] = useState(false)
-  const [progress, setProgress] = useState({ scanned: 0, groups: 0 })
+  const [cleanDone, setCleanDone] = useState<string | null>(null)
+  const [cleaning, setCleaning] = useState(false)
 
-  const runScan = async () => {
-    setState('scanning')
-    setGroups([])
-    setSelected(new Set())
-    setExpanded(new Set())
-    setProgress({ scanned: 0, groups: 0 })
-    const unsub = window.electron.apps.onLeftoverProgress(p => setProgress(p))
-    try {
-      const result = await window.electron.apps.scanLeftovers()
-      setGroups(result)
-      setState('done')
-    } catch {
-      setState('idle')
-    } finally {
-      unsub()
-    }
+  const toggleGroup = (bundleId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(bundleId)) next.delete(bundleId); else next.add(bundleId)
+      return next
+    })
   }
 
-  const toggleGroup = (group: LeftoverGroup) => {
-    const s = new Set(selected)
-    const allSelected = group.files.every(f => s.has(f.path))
-    if (allSelected) {
-      group.files.forEach(f => s.delete(f.path))
-    } else {
-      group.files.forEach(f => s.add(f.path))
-    }
-    setSelected(s)
+  const togglePath = (p: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(p)) next.delete(p); else next.add(p)
+      return next
+    })
   }
 
-  const toggleFile = (f: FileItem) => {
-    const s = new Set(selected)
-    if (s.has(f.path)) s.delete(f.path)
-    else s.add(f.path)
-    setSelected(s)
-  }
-
-  const toggleExpand = (key: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    const s = new Set(expanded)
-    if (s.has(key)) s.delete(key)
-    else s.add(key)
-    setExpanded(s)
-  }
+  const selectedFiles: FileItem[] = groups
+    .flatMap(g => g.paths.filter(p => selected.has(p)).map(p => ({
+      path: p,
+      name: p.split('/').pop() ?? p,
+      size: 0,
+      category: 'app-leftovers' as const,
+      modifiedAt: '',
+    })))
 
   const clean = async () => {
-    const allFiles = groups.flatMap(g => g.files).filter(f => selected.has(f.path))
-    if (allFiles.length === 0) return
-    setWorking(true)
+    if (selectedFiles.length === 0) return
+    setCleaning(true)
     try {
-      const r = await window.electron.apps.cleanLeftovers(allFiles) as { cancelled?: boolean; cleaned: number }
-      if (!r.cancelled && r.cleaned > 0) {
-        // Remove cleaned files from groups
-        const removedPaths = new Set(allFiles.slice(0, r.cleaned).map(f => f.path))
-        setGroups(prev => prev.map(g => ({
-          ...g,
-          files: g.files.filter(f => !removedPaths.has(f.path)),
-          totalSize: g.files.filter(f => !removedPaths.has(f.path)).reduce((t, f) => t + f.size, 0)
-        })).filter(g => g.files.length > 0))
-        setSelected(prev => { const s = new Set(prev); removedPaths.forEach(p => s.delete(p)); return s })
+      const result = await window.electron.apps.cleanLeftovers(selectedFiles)
+      if (!result.cancelled) {
+        setCleanDone(`Moved ${result.cleaned} items to Trash`)
+        setSelected(prev => {
+          const next = new Set(prev)
+          selectedFiles.forEach(f => next.delete(f.path))
+          return next
+        })
       }
-    } catch { /* ok */ }
-    setWorking(false)
+    } finally {
+      setCleaning(false)
+    }
   }
 
-  if (state === 'idle') {
-    return <HeroLanding tab="leftovers" onScan={runScan} scanning={false} theme={theme} />
-  }
-
-  if (state === 'scanning') {
+  if (groups.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
-        <div style={{ fontSize: 40 }}>◎</div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: '#fff' }}>Scanning for leftovers…</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
-          {progress.groups} orphaned group{progress.groups !== 1 ? 's' : ''} found
-        </div>
-        <Spinner accent={theme.accent} />
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 320,
+        gap: 14,
+        color: 'rgba(255,255,255,0.35)',
+      }}>
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block' }}>
+          <path d="M5 16l9 9 13-14"/>
+        </svg>
+        <span style={{ fontSize: 14 }}>No leftover files found</span>
       </div>
     )
   }
 
-  const selectedFiles = groups.flatMap(g => g.files).filter(f => selected.has(f.path))
-  const selectedSize = selectedFiles.reduce((t, f) => t + f.size, 0)
-  const totalSize = groups.reduce((t, g) => t + g.totalSize, 0)
-
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>
-          {groups.length > 0
-            ? `${groups.length} orphaned app${groups.length > 1 ? 's' : ''} · ${fmt(totalSize)}`
-            : 'No leftovers found — your Mac is clean'}
-        </div>
-        <button onClick={runScan} style={ghostBtn}>Rescan</button>
-      </div>
-
-      {groups.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.35)', fontSize: 14 }}>
-          ✓ No orphaned files found
-        </div>
-      ) : (
-        <>
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {groups.map(g => {
-              const key = g.bundleId
-              const isExpanded = expanded.has(key)
-              const allSelected = g.files.length > 0 && g.files.every(f => selected.has(f.path))
-              const someSelected = g.files.some(f => selected.has(f.path))
-
-              return (
-                <div key={key} style={{
-                  borderRadius: 12, overflow: 'hidden',
-                  border: someSelected ? '1px solid rgba(74,144,226,0.35)' : '1px solid rgba(255,255,255,0.08)',
-                  background: someSelected ? 'rgba(74,144,226,0.10)' : 'rgba(255,255,255,0.04)',
-                  transition: 'all 0.15s ease'
-                }}>
-                  {/* Group header */}
-                  <div
-                    onClick={() => toggleGroup(g)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer' }}
-                  >
-                    <Checkbox checked={allSelected} indeterminate={someSelected && !allSelected} accent={theme.accent} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{g.appName}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
-                        {g.bundleId} · {g.files.length} file{g.files.length > 1 ? 's' : ''}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>{fmt(g.totalSize)}</span>
-                    <button
-                      onClick={e => toggleExpand(key, e)}
-                      style={{
-                        background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
-                        cursor: 'pointer', fontSize: 12, padding: '2px 6px', borderRadius: 4,
-                        transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s'
-                      }}
-                    >▾</button>
-                  </div>
-
-                  {/* Expanded file list */}
-                  {isExpanded && (
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingBottom: 4 }}>
-                      {g.files.map(f => (
-                        <div
-                          key={f.path}
-                          onClick={() => toggleFile(f)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 12, padding: '7px 14px 7px 42px',
-                            cursor: 'pointer',
-                            background: selected.has(f.path) ? 'rgba(74,144,226,0.08)' : 'transparent',
-                            transition: 'background 0.1s'
-                          }}
-                        >
-                          <Checkbox checked={selected.has(f.path)} accent={theme.accent} size={14} />
-                          <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {f.name}
-                          </span>
-                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>{fmt(f.size)}</span>
-                          <button
-                            onClick={e => { e.stopPropagation(); window.electron.openInFinder(f.path) }}
-                            title="Show in Finder"
-                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', fontSize: 11, padding: '2px 4px' }}
-                          >
-                            ⌕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
+          {groups.length} orphaned group{groups.length !== 1 ? 's' : ''} · {selected.size} paths selected
+        </span>
+        {cleanDone && (
+          <div style={{ fontSize: 12, color: '#30d158', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CheckIcon size={12} /> {cleanDone}
           </div>
-
-          {/* Footer */}
-          {selected.size > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 16, padding: '14px 16px',
-              background: 'rgba(0,0,0,0.3)', borderRadius: 14,
-              border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)'
-            }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-                  {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>{fmt(selectedSize)}</div>
-              </div>
-              <button onClick={clean} disabled={working} style={{
-                padding: '9px 22px', borderRadius: 10, border: 'none', cursor: working ? 'default' : 'pointer',
-                background: working ? 'rgba(255,255,255,0.1)' : '#e53e3e',
-                color: '#fff', fontSize: 13, fontWeight: 600, opacity: working ? 0.6 : 1,
-                transition: 'opacity 0.2s'
-              }}>
-                {working ? 'Removing…' : 'Move to Trash'}
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-// ── Shared micro-components ───────────────────────────────────────────────────
-
-function Checkbox({ checked, indeterminate, accent, size = 16 }: {
-  checked: boolean
-  indeterminate?: boolean
-  accent: string
-  size?: number
-}) {
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: size * 0.3,
-      border: `1.5px solid ${checked || indeterminate ? accent : 'rgba(255,255,255,0.25)'}`,
-      background: checked ? accent : indeterminate ? `${accent}55` : 'transparent',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0, transition: 'all 0.15s ease'
-    }}>
-      {checked && <span style={{ fontSize: size * 0.65, color: '#fff', lineHeight: 1 }}>✓</span>}
-      {!checked && indeterminate && <span style={{ fontSize: size * 0.65, color: '#fff', lineHeight: 1 }}>–</span>}
-    </div>
-  )
-}
-
-function ScanningIndicator({ label, theme }: { label: string; theme: PageTheme }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
-      <Spinner accent={theme.accent} />
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>{label}</div>
-    </div>
-  )
-}
-
-function Spinner({ accent }: { accent: string }) {
-  return (
-    <div style={{
-      width: 32, height: 32, borderRadius: '50%',
-      border: `2px solid rgba(255,255,255,0.1)`,
-      borderTopColor: accent,
-      animation: 'spin 0.8s linear infinite'
-    }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  )
-}
-
-function ProgressBar({ pct, accent }: { pct: number; accent: string }) {
-  return (
-    <div style={{ width: 260, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
-      <div style={{ width: `${pct}%`, height: '100%', background: accent, borderRadius: 2, transition: 'width 0.3s ease' }} />
-    </div>
-  )
-}
-
-const ghostBtn: React.CSSProperties = {
-  padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)',
-  background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)',
-  fontSize: 12, fontWeight: 500, cursor: 'pointer'
-}
-
-// ── Tab selector ──────────────────────────────────────────────────────────────
-
-const TABS: Array<{ id: Tab; label: string; icon: string }> = [
-  { id: 'uninstaller', label: 'App Uninstaller', icon: '⊗' },
-  { id: 'updater',     label: 'App Updater',     icon: '↑' },
-  { id: 'leftovers',   label: 'File Leftovers',  icon: '◎' },
-]
-
-// ── Root component ────────────────────────────────────────────────────────────
-
-export default function Applications({ theme }: Props) {
-  const [tab, setTab] = useState<Tab>('uninstaller')
-
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Header */}
-      <div>
-        <h1 style={{ margin: '0 0 4px', fontSize: 28, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>
-          Applications
-        </h1>
-        <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
-          Uninstall, update, or remove leftover files from your applications.
-        </p>
+        )}
+        {selected.size > 0 && !cleanDone && (
+          <button
+            className="btn-danger"
+            style={{ fontSize: 12, padding: '7px 18px' }}
+            onClick={clean}
+            disabled={cleaning}
+          >
+            {cleaning ? <SpinnerIcon size={13} /> : `Clean Selected`}
+          </button>
+        )}
       </div>
 
-      {/* Tab strip */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '9px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: tab === t.id ? `${theme.accent}22` : 'rgba(255,255,255,0.06)',
-              color: tab === t.id ? theme.accent : 'rgba(255,255,255,0.55)',
-              fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
-              outline: tab === t.id ? `1px solid ${theme.accent}55` : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <span style={{ fontSize: 15 }}>{t.icon}</span>
-            {t.label}
-          </button>
+      {/* Groups */}
+      <div style={{
+        background: 'rgba(0,0,0,0.22)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 14,
+        overflow: 'hidden',
+      }}>
+        {groups.map((g, i) => (
+          <div key={g.bundleId} style={{ borderBottom: i < groups.length - 1 ? '1px solid rgba(255,255,255,0.05)' : undefined }}>
+            {/* Group header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '11px 16px',
+                cursor: 'pointer',
+                gap: 10,
+              }}
+              onClick={() => toggleGroup(g.bundleId)}
+            >
+              <div
+                onClick={e => {
+                  e.stopPropagation()
+                  const allSel = g.paths.every(p => selected.has(p))
+                  setSelected(prev => {
+                    const next = new Set(prev)
+                    if (allSel) g.paths.forEach(p => next.delete(p))
+                    else g.paths.forEach(p => next.add(p))
+                    return next
+                  })
+                }}
+                style={{
+                  width: 15,
+                  height: 15,
+                  borderRadius: 4,
+                  border: `1.5px solid ${g.paths.every(p => selected.has(p)) ? accent : 'rgba(255,255,255,0.25)'}`,
+                  background: g.paths.every(p => selected.has(p)) ? accent : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  cursor: 'pointer',
+                }}
+              >
+                {g.paths.every(p => selected.has(p)) && <CheckIcon size={10} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{g.appName}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>{g.bundleId}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontVariantNumeric: 'tabular-nums' }}>
+                  {g.paths.length} file{g.paths.length !== 1 ? 's' : ''} · {fmt(g.totalSize)}
+                </span>
+                <svg
+                  width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"
+                  style={{ display: 'inline-block', transform: expanded.has(g.bundleId) ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', opacity: 0.5 }}
+                >
+                  <path d="M2 4l4 4 4-4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            </div>
+
+            {/* Expanded paths */}
+            {expanded.has(g.bundleId) && (
+              <div style={{ background: 'rgba(0,0,0,0.15)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                {g.paths.map(p => (
+                  <label
+                    key={p}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '7px 16px 7px 40px',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid rgba(255,255,255,0.03)',
+                    }}
+                    onClick={() => togglePath(p)}
+                  >
+                    <div style={{
+                      width: 13,
+                      height: 13,
+                      borderRadius: 3,
+                      border: `1.5px solid ${selected.has(p) ? accent : 'rgba(255,255,255,0.20)'}`,
+                      background: selected.has(p) ? accent : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      {selected.has(p) && <CheckIcon size={9} />}
+                    </div>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.60)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.replace(window.electron.homeDir, '~')}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </div>
+    </div>
+  )
+}
 
-      {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
-        {tab === 'uninstaller' && <UninstallerTab theme={theme} />}
-        {tab === 'updater'     && <UpdaterTab theme={theme} />}
-        {tab === 'leftovers'   && <LeftoversTab theme={theme} />}
-      </div>
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export default function Applications({ theme }: Props) {
+  const [phase, setPhase] = useState<ScanPhase>('idle')
+  const [scanningPhase, setScanningPhase] = useState('apps')
+  const [installed, setInstalled] = useState<InstalledApp[]>([])
+  const [updates, setUpdates] = useState<AppUpdate[]>([])
+  const [leftovers, setLeftovers] = useState<AppLeftoverGroup[]>([])
+  const [tab, setTab] = useState<AppTab>('uninstaller')
+  const unsubRef = useRef<(() => void) | null>(null)
+
+  const runScan = async () => {
+    setPhase('scanning')
+    setScanningPhase('apps')
+
+    // Subscribe to scan progress events
+    unsubRef.current = window.electron.apps.onScanProgress((p: { phase: string; found: number }) => {
+      setScanningPhase(p.phase)
+    })
+
+    try {
+      const result = await window.electron.apps.scan()
+      setInstalled(result.installed ?? [])
+      setUpdates(result.updates ?? [])
+      setLeftovers(result.leftovers ?? [])
+      setPhase('done')
+      setTab('uninstaller')
+    } catch (err) {
+      console.error('Apps scan failed:', err)
+      setPhase('idle')
+    } finally {
+      unsubRef.current?.()
+      unsubRef.current = null
+    }
+  }
+
+  const { accent } = theme
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Page header */}
+      {phase === 'done' && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.025em' }}>Applications</h1>
+            <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 3 }}>
+              {installed.length} apps · {updates.length} updates · {leftovers.length} leftover groups
+            </p>
+          </div>
+          <button
+            className="btn-secondary"
+            onClick={runScan}
+            style={{ fontSize: 13, padding: '8px 20px' }}
+          >
+            Rescan
+          </button>
+        </div>
+      )}
+
+      {/* Content */}
+      {phase === 'idle' && <LandingPage onScan={runScan} accent={accent} />}
+      {phase === 'scanning' && <ScanningView phase={scanningPhase} />}
+
+      {phase === 'done' && (
+        <>
+          <TabBar
+            active={tab}
+            onChange={setTab}
+            counts={{ uninstaller: installed.length, updater: updates.length, leftovers: leftovers.length }}
+            accent={accent}
+          />
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            {tab === 'uninstaller' && <UninstallerTab apps={installed} accent={accent} />}
+            {tab === 'updater' && <UpdaterTab updates={updates} accent={accent} />}
+            {tab === 'leftovers' && <LeftoversTab groups={leftovers} accent={accent} />}
+          </div>
+        </>
+      )}
     </div>
   )
 }

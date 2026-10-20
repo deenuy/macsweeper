@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import os from 'os'
 import type {
   FileItem, DiskStats, ScanProgress, TreeNode, FileMeta, VolumeInfo, SystemSnapshot,
-  InstalledApp, AppUpdate, LeftoverGroup, UninstallResult
+  InstalledApp, AppUpdate, AppScanResult, LeftoverGroup, UninstallResult
 } from '../shared/types'
 
 const electronAPI = {
@@ -89,7 +89,7 @@ const electronAPI = {
 
   // Applications: Uninstaller / Updater / Leftovers
   apps: {
-    scan: (): Promise<InstalledApp[]> => ipcRenderer.invoke('apps:scan'),
+    scan: (): Promise<AppScanResult> => ipcRenderer.invoke('apps:scan'),
     leftovers: (bundleId: string, appName: string): Promise<FileItem[]> =>
       ipcRenderer.invoke('apps:leftovers', bundleId, appName),
     uninstall: (

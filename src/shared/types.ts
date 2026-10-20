@@ -248,29 +248,41 @@ export interface InstalledApp {
   size: number
   isMAS: boolean
   sparkleUrl?: string
-  lastUsed?: string
+  modifiedAt: string
+}
+
+export interface AppLeftoverGroup {
+  appName: string
+  bundleId: string
+  paths: string[]
+  totalSize: number
 }
 
 export interface AppUpdate {
-  app: InstalledApp
+  bundleId: string
+  appName: string
+  currentVersion: string
   latestVersion: string
-  updateUrl?: string
-  source: 'sparkle' | 'mas'
+  downloadUrl?: string
+  isMAS: boolean
 }
 
-export interface LeftoverGroup {
-  appName: string
-  bundleId: string
-  totalSize: number
-  files: FileItem[]
+export interface AppScanResult {
+  installed: InstalledApp[]
+  updates: AppUpdate[]
+  leftovers: AppLeftoverGroup[]
 }
+
+// Alias used by preload
+export type LeftoverGroup = AppLeftoverGroup
 
 export interface UninstallResult {
   trashed: string[]
-  failed: string[]
+  failed: { path: string; reason: string }[]
+  cancelled?: boolean
 }
 
-// Space Lens tree types (IPC-serialisable; must stay in sync with src/main/fs-utils.ts)
+// ── Space Lens tree types (IPC-serialisable; must stay in sync with src/main/fs-utils.ts) ──
 export interface TreeNode {
   name: string
   path: string
